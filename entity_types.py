@@ -55,8 +55,14 @@ wdtype2names = defaultdict(list,
   'Q15284' : ['municipality', 'city', 'town', 'village'],
   'Q486972' : ['populated place', 'settlement', 'community'],
   'Q6256' : ['country'],
+  'Q42889' : ['vehicle'],
+  'Q18643213' : ['military_equipment'],
+  'Q728' : ['weapon'],
   'Q1190554' : ['occurrence'],
-  'Q4438121' : ['sports organization', 'sports team']
+  'Q4438121' : ['sports organization', 'sports team'],
+  'Q216353' : ['title'],
+  'Q4164871' : ['position'],
+  'Q12737077' : ['occupation']
  }
 )
 
