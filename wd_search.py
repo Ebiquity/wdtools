@@ -1,45 +1,14 @@
 """
 
-Search Wikidata to find entities give a string and optional sets of types. Returns an ranked list of
+Search Wikidata to find entities given a string and optional sets of types. Returns a ranked list of
 objects, one for each hit, with basic information from Wikidata and optionally DBpedia in one or
 more languages. An example of a call from the command line:
 
   python wd_search.py "UMBC" --types ORG --oktypes LOC FAC --badtypes 'sports team' --lang en zh --dbpedia --limit 20 --top 5
 
-Types can be any wikidata type (e.g., Q5 for human) or a type name in entity_types.py.  The search prefers hits with a type in --types but will accept onese with a type in --oktypes.  If an entity has a type in --badtypes, it is rejected. The --limit parameter defines how many initial candidates are checked (up to 50) and --top says how many good hits are returned.
+Types can be any wikidata type (e.g., Q5 for human) or a type name in entity_types.py.  The search prefers hits with a type in --types but will accept ones with a type in --oktypes.  If an entity has a type in --badtypes, it is rejected. The --limit parameter defines how many initial candidates are checked (up to 50) and --top says how many good hits are returned.  The --lang args are 2-letter codes for language-specific information.  If the --dbpedia flag is given, the additional information from dbpedia is included (types and an abstract paragraph of text).  --no-dbpedia suppresses this.
 
-The return value is a list, roughly ordered from best to worst match.  For example, searching for 'wannacry' produces two hits:
-
-[ { "id":"Q29957041",
-    "uri":"https://www.wikidata.org/wiki/Q29957041",
-    "types":["Q4071928:cyberattack"],
-    "description":"ransomware cyberattack",
-    "label":"WannaCry ransomware attack",
-    "aliases":[
-      "WanaCrypt0r 2.0",
-      "Wanna Decryptor",
-      "WannaCry",
-      "WannaCrypt",
-      "WCry",
-      "WannaCry cyberattack" ] },
-  { "id":"Q29908721",
-    "uri":"https://www.wikidata.org/wiki/Q29908721",
-    "types":[ "Q4071928:cyberattack", "Q7397:software", "Q14001:malware"],
-    "description":"Ransomware",
-    "label":"WannaCry",
-    "aliases":[
-      "Ransom.Win32.Wannacry",
-      "WanaCrypt0r 2.0",
-      "Wanna Decryptor",
-      "WannaCrypt",
-      "WCry" ]  }
-
-
-s = "President_(government_title)Call this from the command line for experimentation, e.g.:
-   python3 wd_search.py <string> <required types>
-   python3 wd_search.py Adobe
-   python3 wd_search.py python Q7397
-   python3 wd_search.py mitre  "Q783794,Q2659904"
+The return value is a list, roughly ordered from best to worst match.
 
 """
 
