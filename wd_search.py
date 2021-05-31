@@ -373,7 +373,7 @@ def main(args):
     result = wd_search(args.string, langs=args.lang, limit=args.limit, target_types=args.types, ok_types=args.oktypes, bad_types=args.badtypes, top=args.top, dbpedia=args.dbpedia)
     print(f"Queries to wikidata:{wd_queries}, DBpedia:{dbp_queries}")
     with args.out as out:
-        out.write(hit_string(result))
+        out.write(hits_string(result))
         out.write('\n')
 
 if __name__ == '__main__':
