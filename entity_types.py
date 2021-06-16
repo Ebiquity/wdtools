@@ -1,4 +1,4 @@
-""" data and functions to map between wikidata types (e.g., Q5) and their common en names (e.g., human)
+""" data and functions to map between wikidata types (e.g., Q5) and their common english names (e.g., human)
 
 Here are the standard Spacy types, their brief desctipisons and a
 simple mapping to a WD type (may need to be checked and refined
@@ -35,7 +35,8 @@ wdtype2names = defaultdict(list,
   'Q56061' : ['GPE'],
   'Q5' : ['human','PER', 'PERSON'],
   'Q13226383' : ['facility','FAC'],
-  'Q1656682' : ['event', 'EVENT'],
+# 'Q1656682' : ['event', 'EVENT'],
+  'Q1190554' : ['occurrence', 'event', 'EVENT'], # covers events and more
   'Q33742' : ['natural language','LANGUAGE'],
   'Q17537576' : ['creative work','WORK_OF_ART'],
   'Q43229' : ['organization','ORG'],
@@ -48,23 +49,82 @@ wdtype2names = defaultdict(list,
   'Q573' : ['DATE', 'day'],
   'Q47018901' : ['DATE', 'month'],
   'Q3186692' : ['DATE', 'year', 'calendar year'],
-  'Q1248784' : ['airport'],
+  'Q1248784' : ['airport', 'AIRPORT'],
   'Q4438121' : ['sports organization', 'sports team', 'athletic team'],
   'Q515' :['city'],
   'Q7930989' : ['city'],
   'Q15284' : ['municipality', 'city', 'town', 'village'],
   'Q486972' : ['populated place', 'settlement', 'community'],
   'Q6256' : ['country'],
-  'Q42889' : ['vehicle'],
-  'Q18643213' : ['military_equipment'],
-  'Q728' : ['weapon'],
-  'Q1190554' : ['occurrence'],
+  'Q42889' : ['vehicle', 'VEH'],
+  'Q18643213' : ['military_equipment', 'MIL'],
+  'Q728' : ['weapon', 'WEA'],
   'Q4438121' : ['sports organization', 'sports team'],
   'Q216353' : ['title'],
   'Q4164871' : ['position'],
-  'Q12737077' : ['occupation']
+  'Q12737077' : ['occupation', 'profession'],
+  'Q223557' : ['physical object', 'physob'],
+  'Q61606710' : ['material resource'],  # may be better for physobs
+  'Q7184903' : ['abstract object', 'ABSTRACT'],
+  'Q3966' : ['computer hardware'],
+  'Q7239' : ['organism', 'living thing'],
+  'Q729' : ['animal'],
+  'Q47461344' : ['written work', 'WRTITTENWORK'],
+  'Q14897293' : ['fictional entity', 'fictional', 'FICTIONAL'],
+  'Q68': ['computer'],
+  'Q4167410' : ['WIKIDISAMBIGUATION'],    #Wikimedia disambiguation page
+  'Q740464' : ['LAW', 'law'],
+  'Q18640' : ['TIME', 'time'],
+  'Q11229' : ['PERCENT', 'percent'],
+  'Q35120' : ['ENTITY', 'entity'],
+  'Q105815710' : ['performing arts group'],
+  'Q1781513': ['positon'], # on a team, e.g. quarterback
+  'Q4392985' : ['religious identity','NORP']
  }
 )
+
+#TODO: map schema.org types (used by google knowledge graph) to wikidata types)
+
+schematype2names = defaultdict(list, {
+  'Action' : [ ],
+  'AdministrativeArea' : [], #GPE
+  'Animal' : [ ],
+  'BodyOfWater' : [ ],   # GPE
+  'Book' : [ ], # WORK_OF_ART
+  'Brand' : [ ], # PRODUCT
+  'BroadcastChannel' : [ ], #ORG
+  'CollegeOrUniversity' : [ ], #ORG
+  'Corporation' : [ ],  #ORG
+  'Country' : [ ], #GPE
+  'CreativeWork' : ['WORK_OF_ART'],
+  'EducationalOrganization' : [ ], #ORG
+  'Event' : ['EVENT'],
+  'Intangible' : [ ],
+  'MedicalEntity' : [ ],
+  'Movie' : [ ],  # WORK_OF_ART
+  'MovieTheater' : ['FAC'],
+  'MusicAlbum' : [ ], # WORK_OF_ART
+  'MusicComposition' : [ ],  #WORK_OF_ART
+  'Organization' : ['ORG'],
+  'PerformingGroup' : ['ORG'],
+  'Periodical' : [ ],  #WORK_OF_ART
+  'Person' : ['PER', 'PERSON', 'person'],
+  'Place' : ['LOC'],
+  'Product' : ['PRODUCT'],
+  'ProductModel' : ['PRODUCT'],
+  "RadioStation": [ ], #ORG
+  'RiverBodyOfWater' : ['GPE'],
+  'Religion' : ['NORP'],
+  'SoftwareApplication' : ['PRODUCT'],
+  'SportsOrganization' : [ ], #ORG
+  'SportsTeam' : [ ], #ORG
+  'Thing' : [ ],
+  'TVSeries' : [ ], # WORK_OF_ART
+  'Vehicle' : [ ], #PRODUCT 
+  'VideoGame' : [ ] #PRODUCT 
+ }
+)
+
 
 spacytype2wdtypes = {
   'PERSON' : ['Q5'],
@@ -84,7 +144,8 @@ spacytype2wdtypes = {
   'MONEY' : ['Q1368'],
   'QUANTITY' : ['Q47574'],
   'ORDINAL' : ['Q923933'],
-  'CARDINAL' : ['Q11563']
+  'CARDINAL' : ['Q11563'],
+   'Q7397': ['software']
   }
 
 
@@ -135,7 +196,9 @@ wd_cyber_target = {
   'Q2659904':'government organization',
   'Q1668024':'service on internet',
   'Q202833':'social media',
-  'Q870898':'computer security software'
+  'Q870898':'computer security software',
+  'Q27096213': ['geographic entity']
+
 }
 
 wd_cyber_ok = {
@@ -157,16 +220,35 @@ wd_cyber_bad = {
   'Q28555911':'ordinary matter'
 }
 
-# dict maping a type name to its corresponding WD type.  We also male a type to
-# itself, so it given a string X that might be wither a WD type or a spacy type
-# or some of ther type, notable_names2types[X] will always return the WD type.
+# -------------------------- mapping a type name (e.g., PER) to a wikidata type (e.g., Q5) or schema.org type (e.g., Person)
+
+    
+# dict maping a type name to its corresponding WD type.  We also map a type to
+# itself, so it given a string X that might be either a WD type or a spacy type
+# or some of ther type, name2wdtype[X] should always return the WD type.
 
 name2wdtypes = defaultdict(list)
 
+# populate the name2wdtypes dictionary
 for atype, names in wdtype2names.items():
     name2wdtypes[atype] = [atype]
     for name in names:
         name2wdtypes[name].append(atype)
+
+# dict maping a type name to its corresponding schema.org type.  We also map a type to
+# itself, so it given a string X that might be either a schema.org type or a spacy type
+# or some of ther type, names2schematype[X] should always return the WD type.
+
+names2schematypes = defaultdict(list)
+
+# populate the names2schematypes dictionary
+for atype, names in schematype2names.items():
+    names2schematypes[atype] = [atype]
+    for name in names:
+        names2schematypes[name].append(atype)
+        
+# a funtion that might be useful to go from a common name for a type
+# to it's corresponding Wikidata types
 
 def wd_types(type_names):
     """ given a type name or list of type names, returns a list of wd_types """
@@ -190,5 +272,50 @@ def wd_types(type_names):
                 wd_types.add(t)
     return(list(wd_types))
 
-# types of interest for HLTCOE scale2021
+# --------------------------------------------------------------------------
+# SCALE 2021 type lists (under development)
+# --------------------------------------------------------------------------
+
+
+# these are all of the types that we might want to be aware of for scale2021
 scale_types = wdtype2names.keys()
+
+# the default target type if none is specified
+scale_default_target_types = ['ENTITY']
+
+# These are types that should be ok and useful for scale2021
+scale_default_ok_types =  [
+
+#person or organization (Q106559804)
+ 'ENTITY',
+ 'AIRPORT',
+ 'CARDINAL',
+# 'DATE',
+ 'EVENT',
+ 'FAC',
+ 'GPE',
+ 'LANGUAGE',
+ 'LAW',
+ 'LOC',
+ 'MIL',
+ 'MONEY',
+ 'NORP',
+ # 'ORDINAL',
+ 'ORG',
+ 'PER',
+ # 'PERCENT',
+ 'PRODUCT',
+# 'QUANTITY',
+ # 'TIME',
+ 'VEH',
+ 'WEA']
+
+# These are types that will probably not be useful for scale2021.  We will need to add more
+scale_default_bad_types = [
+    'WIKIDISAMBIGUATION',
+    'FICTIONAL',
+#     'WRTITTENWORK',
+#     'WORK_OF_ART',
+#     'performing arts group'
+    ]
+
