@@ -60,7 +60,7 @@ DFS = {
  'target_types' : scale_default_target_types, 
  'ok_types' : scale_default_ok_types,
  'bad_types' : scale_default_bad_types,
- 'limit' : 10,
+ 'limit' : 20,
  'top' : 1,
  'dbpedia' : False,
  'category' : 'all' }
@@ -77,7 +77,14 @@ default_dbpedia_endpoint = "http://dbpedia.org/sparql"
 # user agent for http request (required by wikidata query service) change name as appropriate
 USER_AGENT = "SearchBot/2.0 (Tim Finin)"
 
-def link(string, target_types=DFS['target_types'], ok_types=DFS['ok_types'], bad_types=DFS['bad_types'], category=DFS['category']):
+def link(string, target_types=DF['target_types'], ok_types=DF['ok_types'], bad_types=DF['bad_types'], category=DF['category']):
+    """ return the top hit. default type is 'entity' """
+    #print('linking', string)
+    result = wd_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=False, top=1, category=category)
+    return result[0] if result else None
+
+# special version for scale 2021 project
+def scale_link(string, target_types=DFS['target_types'], ok_types=DFS['ok_types'], bad_types=DFS['bad_types'], category=DFS['category']):
     """ return the top hit. default type is 'entity' """
     #print('linking', string)
     result = wd_scale_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=False, top=1, category=category)
@@ -98,14 +105,12 @@ def wd_search(string, langs=DF['langs'], target_types=DF['target_types'], ok_typ
     hits = wd_string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top)
     return [complete_item(hit, langs, dbpedia) for hit in hits]
 
-# version for HLTCOE scale 2021
-
+# version for HLTCOE scale 2021 project
 def wd_scale_search(string, langs=['en','ru','zh','fa'], target_types=DFS['target_types'], ok_types=DFS['ok_types'], bad_types=DFS['bad_types'], limit=DFS['limit'], top=DFS['top'], dbpedia=DFS['dbpedia'], category=DFS['category']):
     #ok_types += scale_types
     # bad_types += ['Q17537576'] # + creative work
     hits = wd_string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top)    
-    
-    return [complete_item(hit, langs, dbpedia) for hit in hits]
+    return [complete_item_scale(hit) for hit in hits]
 
     
 def wd_string_search(string, target_types=DF['target_types'], ok_types=DF['ok_types'], bad_types=DF['bad_types'], limit=DF['limit'], top=DF['top'], category=DF['category']):
@@ -205,6 +210,35 @@ def complete_item(item, langs, dbpedia):
     item['metadata']['candidates_checked'] = dbp_queries    
     return item
 
+# version for HLTCOE scale 2021
+def complete_item_scale(item):
+    """ item is a dict with an id property that's a wikidata id. Add
+    more useful information in a set of languages and, id dbpedia is
+    true, from DBpedia. Returns the dict. """
+
+    id = item['id']
+
+    labels = {}
+    descriptions = {}
+    aliases = {}
+
+    for (lang, lab, al, desc) in get_scale_llads(id):
+        labels[lang] = lab
+        aliases[lang] = al
+        descriptions[lang] = desc
+
+    item['qid'] = id
+    item['counts'] = -1
+    item['scores'] = [ ]
+    item['labels'] = labels
+    item['aliases'] = aliases
+    item['descriptions'] = descriptions
+
+    #remove unwanted keys
+    item.pop('metadata')
+    item.pop('types')
+    return item
+
 def wikidata_search(string, limit=20):
     # search wikidata for items containing string in their name, alias or description
     # I think the service is limited to 50 results
@@ -232,7 +266,7 @@ select distinct ?type ?typeLabel {{
 
 q_types_labels_query_strictinstance = """
 select distinct ?type ?typeLabel {{ 
-   wd:{QID} wdt:P31/wdt:P279*|wdt:P279* ?type .
+   wd:{QID} wdt:P31/wdt:P279* ?type .
    FILTER NOT EXISTS {{wd:{QID} wdt:P279 []}}
    ?type rdfs:label ?typeLabel .
    FILTER (lang(?typeLabel) = "en") }}"""
@@ -249,8 +283,6 @@ select distinct ?type ?typeLabel {{
    FILTER NOT EXISTS {{wd:{QID} wdt:P31 []}}
    ?type rdfs:label ?typeLabel .
    FILTER (lang(?typeLabel) = "en") }}"""
-
-
 
 def get_types(qid, target_types, ok_types, bad_types, category, endpoint=default_wd_endpoint):
     """
@@ -347,7 +379,46 @@ def get_ladw(id, lang):
         desc = rs['desc']['value'] if 'desc' in rs else ''
         wname = rs['wname']['value'] if 'wname' in rs else '' 
         return (label, aliases, desc, wname)
-    
+
+# SPARQL query to get entity's label, description, and aliases for a language
+q_scale_lad_query = """select ?lang ?label ?desc (group_concat(distinct ?alias; separator='|') as ?aliases) {{
+  BIND(wd:{QID} as ?id)
+  {{BIND("en" as ?lang)
+   OPTIONAL {{?id rdfs:label ?label . FILTER(lang(?label) = ?lang)}}
+   OPTIONAL {{?id schema:description ?desc . FILTER(lang(?desc) = ?lang)}}
+   OPTIONAL {{?id skos:altLabel ?alias . FILTER(lang(?alias) = ?lang)}}}}
+  UNION
+  {{BIND("ru" as ?lang)
+   OPTIONAL {{?id rdfs:label ?label . FILTER(lang(?label) = ?lang)}}
+   OPTIONAL {{?id schema:description ?desc . FILTER(lang(?desc) = ?lang)}}
+   OPTIONAL {{?id skos:altLabel ?alias . FILTER(lang(?alias) = ?lang)}}}}
+  UNION
+  {{BIND("zh" as ?lang)
+   OPTIONAL {{?id rdfs:label ?label . FILTER(lang(?label) = ?lang)}}
+   OPTIONAL {{?id schema:description ?desc . FILTER(lang(?desc) = ?lang)}}
+   OPTIONAL {{?id skos:altLabel ?alias . FILTER(lang(?alias) = ?lang)}}}}
+  UNION
+  {{BIND("fa" as ?lang)
+   OPTIONAL {{?id rdfs:label ?label . FILTER(lang(?label) = ?lang)}}
+   OPTIONAL {{?id schema:description ?desc . FILTER(lang(?desc) = ?lang)}}
+   OPTIONAL {{?id skos:altLabel ?alias . FILTER(lang(?alias) = ?lang)}}}}
+}}
+GROUP BY ?lang ?label ?desc """
+
+def get_scale_llads(id):
+    """ Given a Wikidata id (e.g Q42), returns a list of tuple of item's language, label, aliases, and description for en, ru, zh and fa"""
+    results = query_wd(q_scale_lad_query.format(QID=id))
+    llads = []
+    if results:
+        for r in results["results"]["bindings"]:
+            lang = r['lang']['value']
+            label = r['label']['value'] if 'label' in r else ''
+            aliases = r['aliases']['value'].split('|') if 'aliases' in r else [ ]
+            aliases = [ ] if aliases == [''] else aliases
+            desc = r['desc']['value'] if 'desc' in r else ''
+            llads.append((lang, label, aliases, desc))
+    return llads
+        
 def get_immediate_types_labels(id):
     """ Returns a set of the id's immediate types and immediate supertypes"""
 #    q = f'select ?class ?classLabel where {{wd:{id} wdt:P31 ?class. SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en".}}}}'
@@ -446,14 +517,22 @@ def encode_string(text):
 def hits_string(hits):
     return json.dumps(hits, separators=(',',':'), indent=2, ensure_ascii=False, sort_keys=True)
 
-def summary1(hit):
-    if hit:
-        return (hit['id'], hit['en']['label'], hit['en']['description'])
-
-        #return (hit['id'], hit['en']['label'], hit['en']['description'], hit['types'], "http://wikidata.org/wiki/"+hit['id'])
-
 def summary(hits):
-    #print('hits:', hits)
+    """ returns a short summary with just the QID, name and description """
+    def summary1(hit):
+        if hit: return (hit['id'], hit['en']['label'], hit['en']['description'])
+    if type(hits) == list:
+        return [summary1(h) for h in hits]
+    elif hits:
+        return summary1(hits)
+    else:
+        return 'No match'
+
+# special version for scale
+def scale_summary(hits):
+    """ returns a short summary with just the QID, name and description """
+    def summary1(hit):
+        if hit: return (hit['qid'], hit['labels']['en'], hit['descriptions']['en'])
     if type(hits) == list:
         return [summary1(h) for h in hits]
     elif hits:

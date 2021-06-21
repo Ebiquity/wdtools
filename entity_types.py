@@ -30,7 +30,8 @@ from collections import defaultdict
 # in WD and other common systems (e.g., Spacy, DBpedia)
 
 wdtype2names = defaultdict(list,
- {'Q2221906' : ['geographic location','LOC'],
+ { 'Q634' : ['planet', 'LOC'],
+   'Q2221906' : ['geographic location','LOC'],
   'Q2424752' : ['product', 'PRODUCT'],
   'Q56061' : ['GPE'],
   'Q5' : ['human','PER', 'PERSON'],
@@ -79,7 +80,8 @@ wdtype2names = defaultdict(list,
   'Q35120' : ['ENTITY', 'entity'],
   'Q105815710' : ['performing arts group'],
   'Q1781513': ['positon'], # on a team, e.g. quarterback
-  'Q4392985' : ['religious identity','NORP']
+  'Q4392985' : ['religious identity','NORP'],
+  'Q17379835' : ['Wikimedia page outside the main knowledge tree', 'wikijunk']
  }
 )
 
@@ -312,6 +314,7 @@ scale_default_ok_types =  [
 
 # These are types that will probably not be useful for scale2021.  We will need to add more
 scale_default_bad_types = [
+    'wikijunk',
     'WIKIDISAMBIGUATION',
     'FICTIONAL',
 #     'WRTITTENWORK',
