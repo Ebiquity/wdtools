@@ -1,4 +1,4 @@
-# configuration file for wd_search.py for scale21
+# configuration file for wd_search.py for general use, assumes we are only interested in English
 
 CACHE_SIZE: 4096
 
@@ -7,9 +7,6 @@ CACHE_SIZE: 4096
 # set of languages for which we want the name, aliases and descriptions 
 LANGS:
   - en
-  - fa
-  - ru
-  - zh
 
 # types a result should have to be ranked at the top
 TARGET_TYPES:
@@ -93,20 +90,20 @@ CATEGORY: all
 # default context string to score results (probably not needed)
 CONTEXT: ''
 
-# should we use context string to score results"
+# should we use context string (if provided) to score results?
 USE_CONTEXT: True
 
 # how to rank results, one of search, score, sum
-
 RANKING: sum
 
 DEBUG: False
 
 # are we using this for the SCALE 2021?
-SCALE: True
+SCALE: False
 
-# what spacy language model shioule we use, one of md, lg, trf, stanza
-LANGUAGE_MODEL: lg
+# what SpaCy language model shioule we use, one of md, lg, trf, stanza
+# the md one is pretty good.  It's similarity method will work better on non sentences.
+LANGUAGE_MODEL: md
 
 
 

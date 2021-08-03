@@ -29,9 +29,6 @@ from collections import defaultdict
 # dict mapping important high-level Wikidata types to a list of their names
 # in WD and other common systems (e.g., Spacy, DBpedia)
 
-
-
-
 wdtype2names = defaultdict(list,
  {
   'Q105815710' : ['performing arts group'],
@@ -94,9 +91,15 @@ wdtype2names = defaultdict(list,
   'Q740464' : ['LAW', 'law'],
   'Q7406919' :['service', 'ORG', 'ORGANIZATION'],
   'Q7930989' : ['city'],
-  'Q106043376': ['music release type', 'MUSIC']
+  'Q106043376': ['music release type', 'MUSIC'],
+     'Q8054' : ['PROTEIN', 'protein'],                      # procure example
+  'Q11173' : ['chemical compound', 'CHEMICAL COMPOUND']     # procure example
+
+
  }
 )
+
+
 
 #TODO: map schema.org types (used by google knowledge graph) to wikidata types)
 
