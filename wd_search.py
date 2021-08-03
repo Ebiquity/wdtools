@@ -15,55 +15,75 @@ The return value is a list, roughly ordered from best to worst match.
 import argparse as ap
 import sys
 import json
+import yaml
 from SPARQLWrapper import SPARQLWrapper, JSON
 import requests
 from collections import defaultdict
 from datetime import datetime
 from entity_types import *  #fixme
+from functools import lru_cache
 
-DEFAULT_LANG = ['en']
-#DEFAULT_LANG = ['en', 'fa', 'ru', 'zh']
+config_file="wd_search_config.yml"
 
-def get_args(PD):
+with open(config_file, "r") as f:
+    print("Loading config file", config_file)
+    config = yaml.load(f, Loader=yaml.FullLoader)
+
+# set global variables 
+CACHE_SIZE = config.get("CACHE_SIZE")
+LANGS = config.get("LANGS")
+TARGET_TYPES = config.get("TARGET_TYPES")
+NEAR_MISS_TYPES = config.get("NEAR_MISS_TYPES")
+OK_TYPES = config.get("OK_TYPES")
+BAD_TYPES = config.get("BAD_TYPES")
+LIMIT = config.get("LIMIT")
+TOP = config.get("TOP")
+DBPEDIA = config.get("DBPEDIA")
+CATEGORY = config.get("CATEGORY")
+CONTEXT = config.get("CONTEXT")
+USE_CONTEXT = config.get("USE_CONTEXT")
+RANKING = config.get("RANKING")
+SCALE = config.get("SCALE")
+SEARCH_ACTION = config.get("SEARCH_ACTION")
+SEARCH_LANGUAGE = config.get("SEARCH_LANGUAGE")
+LANGUAGE_MODEL = config.get("LANGUAGE_MODEL")
+
+# If USE_CONTEXT is true that we may pass a context sentences with an
+# entity to help select the best match.  The context can be either a
+# raw string or a SpaCy span such as the sentence an entity was
+# mentioned in.
+
+if USE_CONTEXT:
+    import spacy
+    if LANGUAGE_MODEL == "lg":
+        nlp = spacy.load("en_core_web_lg")
+    if LANGUAGE_MODEL == "md":
+        nlp = spacy.load("en_core_web_md")
+    if LANGUAGE_MODEL == "trf":
+        nlp = spacy.load("en_core_web_trf")
+        import tensor2attr
+        nlp.add_pipe('tensor2attr')
+    if  LANGUAGE_MODEL == "stanza":
+        print("Context not supported yet")
+        USE_CONTEXT = False
+        
+def get_args( ):
     # PD is s profile of defaults, typically either DF or DFS
     p = ap.ArgumentParser()
     p.add_argument('string', help='string to search for in label, alias or text')
-    p.add_argument('-l', '--lang', nargs='+', default=PD['langs'], help='return string data in these 2-letter language codes, defaults to just en' )
-    p.add_argument('--top', nargs='?', type=int, default=PD['top'], help='number of ranked hits to return, defaults to 2')
-    p.add_argument('--limit', nargs='?', type=int, default=PD['limit'], help='number of initial candidates to find, defaults to 25')
-    p.add_argument('-t', '--types', nargs='+', default=PD['target_types'], help='must be one of these types, defaults to Q35120 (entity)')
-    p.add_argument('-b', '--badtypes', nargs='+', default=PD['bad_types'], help='must no be one of these types, defaults to none')
-    p.add_argument('-ok', '--oktypes', nargs='+', default=PD['ok_types'], help='use of one of these types if not enough with target types, defaults to none')        
+    p.add_argument('-l', '--lang', nargs='+', default=LANGS, help='return string data in these 2-letter language codes, defaults to just en' )
+    p.add_argument( '--top', nargs='?', type=int, default=TOP, help='number of ranked hits to return, defaults to 2')
+    p.add_argument('--limit', nargs='?', type=int, default=LIMIT, help='number of initial candidates to find, defaults to 25')
+    p.add_argument('-t', '--types', nargs='+', default=TARGET_TYPES, help='must be one of these types, defaults to Q35120 (entity)')
+    p.add_argument('-b', '--badtypes', nargs='+', default=BAD_TYPES, help='must no be one of these types, defaults to none')
+    p.add_argument('-ok', '--oktypes', nargs='+', default=OK_TYPES, help='use of one of these types if not enough with target types, defaults to none')        
     p.add_argument('-o', '--out', nargs='?', type=ap.FileType('wb'), default=sys.stdout, help='file for output (defaults to stdout)')
-    p.add_argument('--dbpedia', dest='dbpedia', nargs=1, default=PD['dbpedia'], help='get DBpdia abstract and types (default)')
-#    p.add_argument('--no-adbpedia', dest='dbpedia', action='store_false', help='do not get DBpdia information')
-    p.add_argument('--category', dest='category', nargs='?', default=PD['category'], help='one of all, strictinstance, instance, strictconcept, or concept. Defaults to all.')
-   # p.set_defaults(PD['dbpedia'])
+    p.add_argument('--dbpedia', dest='dbpedia', nargs=1, default=DBPEDIA, help='get DBpdia abstract and types (default)')
+    p.add_argument('--category', dest='category', nargs='?', default=CATEGORY, help='one of all, strictinstance, instance, strictconcept, or concept. Defaults to all.')
+    p.add_argument('--context', dest='context', nargs='?', default=CONTEXT, help='a string to use for disambigulation')
+    p.add_argument('--link', default=False, action='store_true', help='use link instead of true to just pick best one')    
     args = p.parse_args()
     return args
-
-# profiles are dictionary of default values for wd_search parameters
-
-DF = {
- 'langs' : ['en'],
- 'target_types' : ['Q35120'], # 
- 'ok_types' : [],
- 'bad_types' : [],  # written work
- 'limit' : 20,
- 'top' : 2,
- 'dbpedia' : True,
- 'category' : 'all' }
-
-# A profile of defauts for hltcoe scale 2021
-DFS = {
- 'langs' : ['en', 'ru', 'zh', 'fa'],
- 'target_types' : scale_default_target_types, 
- 'ok_types' : scale_default_ok_types,
- 'bad_types' : scale_default_bad_types,
- 'limit' : 20,
- 'top' : 1,
- 'dbpedia' : False,
- 'category' : 'all' }
 
 # for performance tracking, these will be incremented for each query
 wd_queries = 0
@@ -77,43 +97,52 @@ default_dbpedia_endpoint = "http://dbpedia.org/sparql"
 # user agent for http request (required by wikidata query service) change name as appropriate
 USER_AGENT = "SearchBot/2.0 (Tim Finin)"
 
-def link(string, target_types=DF['target_types'], ok_types=DF['ok_types'], bad_types=DF['bad_types'], category=DF['category']):
-    """ return the top hit. default type is 'entity' """
-    #print('linking', string)
-    result = wd_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=False, top=1, category=category)
-    return result[0] if result else None
 
-# special version for scale 2021 project
-def scale_link(string, target_types=DFS['target_types'], ok_types=DFS['ok_types'], bad_types=DFS['bad_types'], category=DFS['category']):
-    """ return the top hit. default type is 'entity' """
-    #print('linking', string)
-    result = wd_scale_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=False, top=1, category=category)
-    return result[0] if result else None
+def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, top=TOP, category=CATEGORY, context=None, ranking=RANKING, langs=LANGS, dbpedia=DBPEDIA):
+    links = search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=dbpedia, top=top, category=category, context=context, complete=False)
+    #print("LINKS:", links)
+    if not links:
+        return None
+    elif not (USE_CONTEXT and context):
+        # the first result one was the best string match
+        result = links[0]
+    elif ranking == 'search':
+        result = min(links, key = lambda link: link['search_rank'])
+    elif ranking == 'score':
+        result = min(links, key = lambda link: link['score_rank'])
+    elif ranking == 'sum':
+        #print("LINKS:", links)
+        best_rank = min([link['rank'] for  link in links])       
+        best_links = [link for link in links if link['rank'] == best_rank]
+        #  return link with best score if it's 10% better than next best one, else return the one with best search rank
+        if len(best_links) == 1:
+            result = best_links[0]
+        else:
+            best_links = sorted(best_links, key = lambda link: link['score'], reverse=True)
+            if best_links[0]['score'] > 1.1 * best_links[1]['score']:
+                result = best_links[0]
+            else:
+                result = min(best_links, key = lambda link: link['search_rank'])
+    return complete_item(result, langs, dbpedia)
 
 
-# search wikidata given a string for entities, filter by requiring a
-# type on the target or ok list and no types on the bad list
 
-def wd_search(string, langs=DF['langs'], target_types=DF['target_types'], ok_types=DF['ok_types'], bad_types=DF['bad_types'], limit=DF['limit'], top=DF['top'], dbpedia=DF['dbpedia'], category=DF['category']):
+# search wikidata given a string for entities, filter by requiring a type on the target or ok list and no types on the bad list
+
+def search(string, langs=LANGS, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, limit=LIMIT, top=TOP, dbpedia=DBPEDIA, category=CATEGORY, context='', complete=True):
     """ generic WD search """
-    #print(f"wdsearch string:{string}, langs:{langs}, target_types:{target_types}, ok_types:{ok_types}, bad_types:{bad_types}, limit:{limit}, top:{top}, dbpedia={dbpedia}, category:{category}")
-
     # track these for performance reviews
     global wd_queries, dbp_queries, candidates_checked
+
     wd_queries = dbp_queries = candiates_checked = 0
-    #print('wd_search:', category)
-    hits = wd_string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top)
-    return [complete_item(hit, langs, dbpedia) for hit in hits]
+    hits = string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top, context=context)
+    if complete:
+        return [complete_item(hit, langs, dbpedia) for hit in hits]
+    else:
+        return hits
 
-# version for HLTCOE scale 2021 project
-def wd_scale_search(string, langs=['en','ru','zh','fa'], target_types=DFS['target_types'], ok_types=DFS['ok_types'], bad_types=DFS['bad_types'], limit=DFS['limit'], top=DFS['top'], dbpedia=DFS['dbpedia'], category=DFS['category']):
-    #ok_types += scale_types
-    # bad_types += ['Q17537576'] # + creative work
-    hits = wd_string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top)    
-    return [complete_item_scale(hit) for hit in hits]
 
-    
-def wd_string_search(string, target_types=DF['target_types'], ok_types=DF['ok_types'], bad_types=DF['bad_types'], limit=DF['limit'], top=DF['top'], category=DF['category']):
+def string_search(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, category=CATEGORY, limit=LIMIT, top=TOP, action=SEARCH_ACTION, lang=SEARCH_LANGUAGE, context=''):
 
     """ search for up to limit items whose text matches string that
     returns a list ranked by several factors. We want to return the top
@@ -122,60 +151,119 @@ def wd_string_search(string, target_types=DF['target_types'], ok_types=DF['ok_ty
     followed by those with a preferred type, followed by ones with only an
     acceptable type. Within each category items are ranked by their intial order,
     which reflects a matching strategy. """
- 
+
     global candidates_checked
 
+    #print(f"action:{action}, tagets: {target_types}, ok: {ok_types}, top: {top}, limit: {limit}")
+    near_miss_types = []
+    for t in target_types:
+        near_miss_types += NEAR_MISS_TYPES[t] if t in NEAR_MISS_TYPES else []
+
+    # resolve the type names to Qids (e.g., PER=>Q5)
     target_types = wd_types(target_types)
     ok_types = wd_types(ok_types)
     bad_types = wd_types(bad_types)
+    near_miss_types = wd_types(near_miss_types)
 
     if category not in ['all', 'strictinstance', 'instance', 'strictconcept', 'concept']:
         #print('wd_search_string:', category)
         print(f"ERROR: {category} not a recognized category values, should be 'all', 'strictinstance', 'instance', 'strictconcept', or 'concept'")
         return []
 
-    #print(f"search for {top} hit with TARGET:{target_types}, OK:{ok_types}, BAD:{bad_types}")
+    ##print(f"search for {top} hits out of {limit} with TARGET:{target_types}, OK:{ok_types}, BAD:{bad_types}")
 
-    target_hits = []  # candidates with a type in target_types and no type in bad_types
-    ok_hits = []      # candidates with a type in ok_types and no type in bad_types
+    target_hits = []      # candidates with a type in target_types and no type in bad_types
+    near_miss_hits = []   # candidates that might be mistaken as one orf these instead of a target type
+    ok_hits = []          # candidates with a type in ok_types and no type in bad_types
 
     api_url = "https://www.wikidata.org/w/api.php"
-    params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, 'format':'json'}
-    result = requests.Session().get(url=api_url, params=params).json()
-    candidates = [item for item in result['query']['search']]
-    
+    # there are two ways to search for wikidata items
+    if action == "label_aliases_description":
+        params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, 'format':'json', 'srprop':'titlesnippet|snippet'}
+        result = requests.Session().get(url=api_url, params=params).json()
+        candidates = [item for item in result['query']['search']]
+    elif action == "label_aliases":
+        params = {'action':'wbsearchentities', 'search':string, "language":lang, 'format':'json', 'limit':limit}
+        result = requests.Session().get(url=api_url, params=params).json()
+        candidates = [item for item in result['search']]
+    else:
+        print(f"Unknown wikidata search action: {action}")
+        return [ ]
+
+    ##print(f"candidates: {len(candidates)}")
     # process each candidate until we've found enough hits
     for item in candidates:
-        #print('Checking:', item)
         candidates_checked += 1
         id = item['title']
-        found_types = get_types(id, target_types, ok_types, bad_types, category)
-        if found_types == ([],[]):
-            # found neither a target nor a ok type, skip
+        ##print('checking:', id, item)
+        found_types = get_types(id, target_types, near_miss_types, ok_types, bad_types, category)
+        ##print('found:', found_types)
+        if found_types == ([],[],[]):   # found neither a target, near miss, nor ok type, skip
             continue
-        targ_types, ok_types = found_types
-        
-        item['types'] = [t[0] + ':' + t[1] for t in targ_types + ok_types ]
-        if targ_types:
+        tt, nmt, ot = found_types
+        item['types'] = [t[0] + ':' + t[1] for t in tt + nmt + ot ]
+        if tt:
             target_hits.append(item)
-        elif ok_types:
+        elif nmt:
+            near_miss_hits.append(item)            
+        elif ot:
             ok_hits.append(item)
         # stop checking candidates if we have enough hits
         if top and (len(target_hits) >= top):
             break
 
     # return target hits and enough ok hits needed to get to top or as close as possible
-    hits = (target_hits + ok_hits)
-    metadata = {'search_string': string, 'target_types': target_types, 'ok_types':ok_types, 'bad_types': bad_types, 'candidates': len(candidates), 'hits': len(hits), 'top': top, 'category': category, 'time':datetime.now().isoformat()}
-    #print('metadata', metadata)
-    
+    hits = (target_hits + near_miss_hits + ok_hits)
     if not hits:
         return []
     elif len(hits) > top:
         hits = hits[:top]
+    
+    for rank, hit in enumerate(hits):
+        hit['id'] = hit['qid'] = hit['title']
+        hit['mention'] = string
+        if action == "label_aliases_description":
+            hit['description'] = hit['snippet'].replace('<span class="searchmatch">','').replace('</span>','')
+            hit['label'] = hit['titlesnippet'].replace('<span class="searchmatch">','').replace('</span>','')
+        elif action == "label_aliases":
+            # has label, title, description
+            pass
+        hit['search_rank'] = rank + 1
+        hit['score'] = 0.0
+        pop_keys(hit, ['snippet', 'titlesnippet', 'title', 'pageid', 'url', 'repository', 'ns'])
+        #if 'label' not in hit: hit['label'] = ''
+        #if 'description' not in hit: hit['description'] = ''
+        # add context scores
+        if context and USE_CONTEXT:
+            if type(context) == str:
+                hit['context'] = context
+                context = nlp(context)
+            else:
+                hit['context'] = context.text
+            ##print(f'\nFor "{string}" {target_types} in "{context.text}":')
+            if hit['label'] and hit['description']:
+                label = hit['label']
+                desc = hit['description']
+                wd_text = desc if label in desc else label + " " + desc    # add label to description if it's not in it
+                hit['score'] = nlp(wd_text).similarity(context)
+                #print(f"score for {hit['id']} = {hit['score']}")
+            else:
+                wd_text = ""
+            #print(f" #{hit['rank']} {hit['score']:.2f} {hit['qid']} {wd_text} ==> {hit['context'][:30]}")                
 
-    return [{'id':hit['title'], 'types':hit['types'], 'metadata':metadata} for hit in hits]
+    for n, hit in enumerate(sorted(hits, key=lambda x: x['score'], reverse=True)):
+        hit['scores'] = [hit['score']]
+        hit['score_rank'] = n + 1
+        hit['rank'] = (n + 1 + hit['search_rank'])/2  # average of search and score ranks
+    
+    return hits
 
+
+def pop_keys(dic, keys):
+    """ removes keys from a doctionary if they exist """
+    for key in keys:
+        if key in dic:
+            dic.pop(key)
 
 #todo: we might get the number of statements and sitelinks for possible future work on ranking the hits better
 # ?x wikibase:statements ?outcoming .
@@ -187,27 +275,29 @@ def complete_item(item, langs, dbpedia):
     more useful information in a set of languages and, id dbpedia is
     true, from DBpedia. Returns the dict. """
 
-    #print('completing:', item, langs, dbpedia)
+    if SCALE:
+        # scale 2021 uses a slightly different result
+        return complete_item_scale(item)
+    
     id = item['id']
     item['wd_uri'] = f"https://www.wikidata.org/wiki/{id}"
     item['immediate_types'] = get_immediate_types_labels(id)
     item['immediate_supertypes'] = get_immediate_supertype_labels(id)
+    item['sitelinks'] = get_sitelinks(id)    
+    item['wikipedia'] = wp_name = get_en_wikipedia_name(id)
     item['is_instance'] = bool(item['immediate_types'])
     item['is_concept'] = bool(item['immediate_supertypes'])
-    item['wikipedia'] = wp_name = get_en_wikipedia_name(id)
     for lang in langs:
         item[lang] = d = {}
         ladw = get_ladw(id, lang)
-        #if any(ladw):
-        #    d['label'], d['aliases'], d['description'], d['wikiname'] = ladw
         d['label'], d['aliases'], d['description'], d['wikiname'] = ladw
     if dbpedia:
         item['DBpedia_types'] = get_dbpedia_types(id, wp_name)
         for lang, text in get_dbpedia_abstracts(id, langs, wp_name):
             item[lang]['abstract'] = text
-    item['metadata']['wd_queries'] = wd_queries
-    item['metadata']['dbp_queries'] = dbp_queries
-    item['metadata']['candidates_checked'] = dbp_queries    
+    #item['metadata']['wd_queries'] = wd_queries
+    #item['metadata']['dbp_queries'] = dbp_queries
+    #item['metadata']['candidates_checked'] = dbp_queries    
     return item
 
 # version for HLTCOE scale 2021
@@ -226,7 +316,7 @@ def complete_item_scale(item):
         labels[lang] = lab
         aliases[lang] = al
         descriptions[lang] = desc
-
+    
     item['qid'] = id
     item['counts'] = -1
     item['scores'] = [ ]
@@ -234,11 +324,11 @@ def complete_item_scale(item):
     item['aliases'] = aliases
     item['descriptions'] = descriptions
 
-    #remove unwanted keys
-    item.pop('metadata')
-    item.pop('types')
+    item['sitelinks'] = get_sitelinks(id)
+
     return item
 
+@lru_cache(maxsize=CACHE_SIZE)
 def wikidata_search(string, limit=20):
     # search wikidata for items containing string in their name, alias or description
     # I think the service is limited to 50 results
@@ -284,23 +374,39 @@ select distinct ?type ?typeLabel {{
    ?type rdfs:label ?typeLabel .
    FILTER (lang(?typeLabel) = "en") }}"""
 
-def get_types(qid, target_types, ok_types, bad_types, category, endpoint=default_wd_endpoint):
+def get_types(qid, target_types, near_miss_types, ok_types, bad_types, category):
     """
     Given a wikidata id (e.g., Q7803487) returns a tuple with its types in target_types, ok_types.
     returns immediaely with ([],[]) if a type in bad_types. We assume that target_types, preferred_types, acceptable_types,
     and bad_types are disjoint.  Each type is represented as a tuple (id, name), e.g., ('Q5', 'human').  If target_types and
     preferred_types are both an empty list or set, all types not in bad_types are considered preferred.
-
     category should be on of all, instance, strictinstance or, cconcept
-
     """
-    # retrieve types for wd id
-    #print("getting types:", qid, target_types, ok_types, bad_types, category)
-    #alltypes = not(target_types or preferred_types) or target_types == ['']
+    ##print('called:', qid, target_types, near_miss_types, ok_types, bad_types, category)
+    ttypes =  [ ]
+    nmtypes = [ ]
+    oktypes = [ ]
 
-    #print('get_types:', category)
-    failure = ([ ], [ ])
+    for id_label in query_for_types(qid, category):
+        id = id_label[0]
+        ##print(f"get_type checking {id}")
+        if id in bad_types:
+            #print(f"{qid} bailing on bad type:{id_label}")
+            return ([ ], [ ], [ ])
+        elif id in target_types:
+            ##print(f"{id} in target types")
+            ttypes.append(id_label)
+        elif id in near_miss_types:
+            ##print(f"{id} in near miss types")
+            nmtypes.append(id_label)
+        elif id in ok_types:
+            oktypes.append(id_label)
+    found = (ttypes, nmtypes, oktypes)
+    return found
 
+@lru_cache(maxsize= CACHE_SIZE * 2)
+def query_for_types(qid, category):
+    """ returns a list of (id, label) tuples for qid's types """
     if category == 'all':
         query = q_types_labels_query_all.format(QID=qid)
     elif category == 'strictinstance':
@@ -313,26 +419,14 @@ def get_types(qid, target_types, ok_types, bad_types, category, endpoint=default
         query = q_types_labels_query_concept.format(QID=qid)
     else:
         print('ERROR: bad category value in get_types', category)
-        return failure
-
-    #print(f"\nquery: {query}\n")
-
-    results = query_wd(query, endpoint=endpoint)
-    ttypes = set()
-    oktypes = set()
+        return [ ]
+    type_ids = set()
+    results = query_wd(query)
     for result in results["results"]["bindings"]:
-        id_label = (wd_entity_id(result['type']['value']), result['typeLabel']['value'])
-        id = id_label[0]
-        if id in bad_types:
-            #print(f"{qid} bailinging bad type:{id_label}")
-            return failure       
-        elif id in target_types:
-            ttypes.add(id_label)
-        elif id in ok_types:
-            oktypes.add(id_label)
-    found = (list(ttypes), list(oktypes))
-    #print(f"got_types found {found}")
-    return (list(ttypes), list(oktypes))
+        id_label = (result['type']['value'].rsplit('/',1)[-1], result['typeLabel']['value'])
+        type_ids.add(id_label)
+    # print(f"types {qid}: {type_ids}")
+    return type_ids
 
 ## send query to enpoints
 
@@ -353,7 +447,6 @@ def query_endpoint(query, endpoint):
     sparql.setQuery(query)
     return sparql.query().convert()
 
-
 # SPARQL query to get entity's label, description, aliases and wikiname for a language
 q_ladw_query = """
 SELECT DISTINCT ?label ?desc (group_concat(distinct ?alias; separator='|') as ?aliases) ?wname
@@ -367,7 +460,7 @@ WHERE {{
   }}
 GROUP BY  ?label ?desc ?wname """
 
-
+@lru_cache(maxsize=CACHE_SIZE)
 def get_ladw(id, lang):
     """ Given a Wikidata id, returns a tuple of the item's label, aliases, description, and wikiname for a language"""
     results = query_wd(q_ladw_query.format(QID=id, LANG=lang))
@@ -405,6 +498,7 @@ q_scale_lad_query = """select ?lang ?label ?desc (group_concat(distinct ?alias; 
 }}
 GROUP BY ?lang ?label ?desc """
 
+@lru_cache(maxsize=CACHE_SIZE)
 def get_scale_llads(id):
     """ Given a Wikidata id (e.g Q42), returns a list of tuple of item's language, label, aliases, and description for en, ru, zh and fa"""
     results = query_wd(q_scale_lad_query.format(QID=id))
@@ -419,6 +513,7 @@ def get_scale_llads(id):
             llads.append((lang, label, aliases, desc))
     return llads
         
+@lru_cache(maxsize=CACHE_SIZE)
 def get_immediate_types_labels(id):
     """ Returns a set of the id's immediate types and immediate supertypes"""
 #    q = f'select ?class ?classLabel where {{wd:{id} wdt:P31 ?class. SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en".}}}}'
@@ -426,19 +521,28 @@ def get_immediate_types_labels(id):
     result =  query_wd(q)
     class_labels = set()
     for x in result['results']['bindings']:
-        class_labels.add(x['class']['value'].split('/')[-1] + ':' +  x['label']['value'])
+        class_labels.add(x['class']['value'].rsplit('/',1)[1] + ':' +  x['label']['value'])
     return list(class_labels)
 
+@lru_cache(maxsize=CACHE_SIZE)
 def get_immediate_supertype_labels(id):
     """ id should be a class. Returns a set of the id's immediate supertypes """
     q = f"select ?class ?label {{wd:{id} wdt:P279 ?class. ?class rdfs:label ?label. FILTER (lang(?label) = 'en') }}"
     result =  query_wd(q)
     class_labels = set()
     for x in result['results']['bindings']:
-        class_labels.add((x['class']['value'].split('/')[-1] + ':' + x['label']['value']))
+        class_labels.add((x['class']['value'].rsplit('/',1)[1] + ':' + x['label']['value']))
     return list(class_labels)
 
+@lru_cache(maxsize=CACHE_SIZE)
+def get_sitelinks(qid):
+    results = query_wd(f"select ?n {{ wd:{qid} wikibase:sitelinks ?n}}")
+    if results["results"]["bindings"]:
+        return int(results["results"]["bindings"][0]['n']['value'])
+    else:
+        return 0
 
+@lru_cache(maxsize=CACHE_SIZE)
 def get_en_wikipedia_name(qid):
     """ Given a wikidata QID, get its en Wikipedia name if it has one, else '' """
     query = f'SELECT ?name {{?art schema:about wd:{qid}; schema:inLanguage "en"; schema:name ?name; schema:isPartOf <https://en.wikipedia.org/>.}} LIMIT 1'
@@ -461,6 +565,7 @@ def get_dbpedia_abstracts(qid, langs=['en'], name=''):
 
 def quote_str(s): return "'"+s+"'"
 
+@lru_cache(maxsize=CACHE_SIZE)
 def get_dbpedia_types(qid, name=''):
     """ returns a list of dbpedia types given qid, a wikidata id """
     if not name:
@@ -477,12 +582,13 @@ def get_dbpedia_types(qid, name=''):
             dbp_types.append('dbo:' + dbp_type[28:])
         elif dbp_type.startswith("http://umbel.org/umbel/rc/"):
             dbp_types.append('umbel:' + dbp_type[26:])            
-    #print(f"Foynd {dbp_types}")
+    #print(f"Found {dbp_types}")
     return dbp_types
 
 def remove_prefix(text, prefix):
     return text[len(prefix):] if text.startswith(prefix) else text
     
+@lru_cache(maxsize=CACHE_SIZE)
 def get_isinstance_istype(id):
     """ Returns a tuple of two Booleans idicating if id is an instance and is a type """
     q = f"""select distinct ?instance ?type where {{
@@ -492,24 +598,25 @@ def get_isinstance_istype(id):
     bindings = results["results"]["bindings"][0]
     return (bindings['instance']['value'], bindings['type']['value'])
 
+@lru_cache(maxsize=CACHE_SIZE)
 def isa_type(id):
     """ returns True iff id is a wikidata type, i.e., has an instance, a subtype or a supertype """
     return query_wd(f"ASK {{?x wdt:P31|wdt:P279|^wdt:P279 wd:{id} }}")['boolean']
 
+@lru_cache(maxsize=CACHE_SIZE)
 def isa_instance(id):
     """ returns True iff id isa wikidata instance """
     return query_wd(f"ASK {{wd:{id} wdt:P31 ?x}}")['boolean']
 
 def wd_entity_id(url):
     """ returns entity id if url is an entity, else the url"""
-    return url.split('http://www.wikidata.org/entity/')[1] if url.startswith('http://www.wikidata.org/entity/') else url
+    return url.rsplit('/', 1)[1] if url.startswith('http://www.wikidata.org/entity/') else url
 
 def encode_string(text):
     """ prefix some chars with a backslash for using in a sparql query """
     for ch in """(),'/@""" :
         if ch in text:
             text = text.replace(ch,"\\"+ch)
-    #text = text.replace('(','\(').replace(')','\)').replace(',','\,').replace("'","\\'").replace('/','\/').replace('@','\@')
     if text.endswith('.'):
         text = text[:-1] + '\.'
     return text
@@ -519,8 +626,6 @@ def hits_string(hits):
 
 def summary(hits):
     """ returns a short summary with just the QID, name and description """
-    def summary1(hit):
-        if hit: return (hit['id'], hit['en']['label'], hit['en']['description'])
     if type(hits) == list:
         return [summary1(h) for h in hits]
     elif hits:
@@ -528,26 +633,22 @@ def summary(hits):
     else:
         return 'No match'
 
-# special version for scale
-def scale_summary(hits):
-    """ returns a short summary with just the QID, name and description """
-    def summary1(hit):
-        if hit: return (hit['qid'], hit['labels']['en'], hit['descriptions']['en'])
-    if type(hits) == list:
-        return [summary1(h) for h in hits]
-    elif hits:
-        return summary1(hits)
-    else:
-        return 'No match'
-    
+def summary1(hit):
+    # slightly different versions of SCALE and general
+    if hit:
+        if SCALE:
+            return (hit['qid'], hit['labels']['en'], hit['descriptions']['en'])
+        else:
+            return (hit['id'], hit['en']['label'], hit['en']['description'])
 
 def main(args):
-    result = wd_scale_search(args.string, langs=args.lang, limit=args.limit, target_types=args.types, ok_types=args.oktypes, bad_types=args.badtypes, top=args.top, dbpedia=args.dbpedia, category=args.category)
+    if args.link:
+        result = link(args.string, target_types=args.types, ok_types=args.oktypes, bad_types=args.badtypes, top=args.top, dbpedia=args.dbpedia, category=args.category, context=args.context)
+    else:
+        result = search(args.string, langs=args.lang, limit=args.limit, target_types=args.types, ok_types=args.oktypes, bad_types=args.badtypes, top=args.top, dbpedia=args.dbpedia, category=args.category, context=args.context)
     with args.out as out:
         out.write(hits_string(result))
         out.write('\n')
 
 if __name__ == '__main__':
-    main(get_args(DFS))
-
-
+    main(get_args())

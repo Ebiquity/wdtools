@@ -1,4 +1,3 @@
-
 from collections import defaultdict
 import re
 
@@ -23,50 +22,77 @@ def alldigits(text):
             return False
     return True
 
-# this should be local to a document (i.e., topic part), so reset it as needed
-link_string = defaultdict(str)
+# this should be local to a document (i.e., topic part), so reset it as needed by calling reset_link_string()
+
+def reset_link_string():
+    global link_string, no_link_string
+    link_string = defaultdict(str)
+    no_link_string = set()
+    # we predefine some common abbreviations that have problems
+    # our simple matcher links USA to Usa, a city in Japan :-(
+    link_string['USA'] = "United States of America"
+    link_string['U.S.'] = "United States of America"
+    
+reset_link_string()
 
 def find_link_strings(doc):
-    """ checks entity mentions of types PERSON and ORG to predict coreference """
+    """ checks entity mentions of types PERSON and ORG to predict coreference; checks defined abbreviations.
+        link_stringsd has keys and vlaues which are mention strings.  SHiould be be tuples, string and type? """
     
     global link_string
-    link_string = defaultdict(str)
-
+    
+    for abrv in doc._.abbreviations:
+        # use the abbreviation pipe data
+        #print(f"link string {abrv} ==> {abrv._.long_form} ")
+        link_string[abrv.text] = abrv._.long_form.text
+    
+    # may be risky to match an ORG with a PER
     for e in doc.ents:
-        if e.end - e.start > 1 or e.label_ != 'PERSON':
-            continue
+        #print("CHecking ent", e)
+        # find a single token PER or ORG
+        if e.end - e.start > 1 or e.label_  not in ['PERSON', 'ORG']: continue
         etl = (e.text, e.label_)
-        if etl in link_string:
-            pass
-            #print(f"Already linking {etl} to {link_string[etl]}")
-        etext = trim(e.text).lower()
+        etext = trim(e.text)
+        if etext in link_string: continue
+        #print(f"Checking possible coref {etl}")
         matches = []
         for e2 in doc.ents:
+            # only consider a multi-token PER
             if e == e2 or e2.label_ != 'PERSON' or e2.end - e2.start == 1 :
                 continue
-            e2_final_word = e2.text.split(' ')[-1]
-            e2text = trim(e2_final_word).lower()
-            if etext == e2text:
-                matches.append(e2.text)
+            #print(f"Compare {etext} to {first_last(e2)}")
+            if etext in first_last(e2):
+                matches.append(trim(e2.text))
+        # we have winner if there's one and only one match
         if matches and matches.count(matches[0]) == len(matches):
-            link_string[etl] = matches[0]
+            link_string[etext] = matches[0]
             #print(f"Coref {etl} to {matches[0]}")
+        #else:
+            # we don't what to check this twice in document
+            #no_link_string.add(etext)
 
     for e in doc.ents:
-        # for a one word entity that looks like an abbreviation, look for an examded version
+        # for a one word entity that looks like an abbreviation, look for an extended version
         if e.end - e.start == 1 and e.label_ in ['ORG', 'LAW'] and e.text.isupper() and 1 < len(e.text) < 8:
-            #print(f"Checking possible abbreviation {e.text}")
+            etl = (e.text, e.label_)
+            if e.text in link_string  or (e.text in no_link_string):
+                continue
+            #print(f"Checking possible abbreviation {etl}")
             matches = [ ]
             # match mentions that yield a plausible abbreviation
             for e2 in doc.ents:
                 if e != e2 and e2.label_ == e.label_ :
                     e2tokens =  re.split(' |-', e2.text)
-                    #e2tokens = e2.text.split(' ')
                     if e2tokens[0] in ["The", "the", "a", "an", "A", "An"]:
                         #print('trimming', e2tokens[0])
                         e2tokens = e2tokens[1:]
-                    if len(e2tokens) != len(e.text):
-                        continue
+                    if len(e2tokens) > len(e.text):
+                        e2tokens = [t for t in e2tokens if t not in ['of', 'for', 'and', 'in', 'with', 'on', '&']]
+                        #print(e2tokens)
+                        if len(e2tokens) != len(e.text):
+                            continue
+                    else:
+                            continue
                     #print('e2tokens:', e2tokens)
                     abbreviation = abbreviate(e2tokens)
                     #print(f"  Abbreviate {e2.text} as {abbreviation} ")
@@ -76,9 +102,14 @@ def find_link_strings(doc):
             #if matches:  print(f"  Matches: {matches}")
             if matches and matches.count(matches[0]) == len(matches):
                 #link_string[e] = matches[0]
-                etl = (e.text, e.label_)
-                link_string[etl] = matches[0]
+                link_string[e.text] = matches[0]
                 #print(f"Coref {etl}  to {matches[0]}")
+            else:
+                #print(f"adding {etl} to no_link_string")
+                no_link_string.add(e.text)
+
+
+
 
 def abbreviate(tokens):
     """ Generate a possible abbreviation for a list of tokens """
@@ -95,7 +126,6 @@ def entity_in_text(etext, sentence, max_length):
     start = max(0, estart - int(context_length/2))
     return sentence1[start:start+max_length+1]
 
-
 def get_nc_text(nc):
     last = nc[-1]
     lemma = last.lemma_
@@ -104,3 +134,8 @@ def get_nc_text(nc):
     else:
         return nc.text
     
+def first_last(e):
+    """ return list of first and last names in a multi-token name, trimmed  """
+    tokens = e.text.split(' ')
+    return [trim(tokens[0]), trim(tokens[-1])]
+

@@ -26,62 +26,75 @@ CARDINAL:'Numerals that do not fall under another type';Q11563;
 
 from collections import defaultdict
 
-# dict mapping important high-level WD types to a list of their names
+# dict mapping important high-level Wikidata types to a list of their names
 # in WD and other common systems (e.g., Spacy, DBpedia)
 
+
+
+
 wdtype2names = defaultdict(list,
- { 'Q634' : ['planet', 'LOC'],
-   'Q2221906' : ['geographic location','LOC'],
-  'Q2424752' : ['product', 'PRODUCT'],
-  'Q56061' : ['GPE'],
-  'Q5' : ['human','PER', 'PERSON'],
-  'Q13226383' : ['facility','FAC'],
-# 'Q1656682' : ['event', 'EVENT'],
-  'Q1190554' : ['occurrence', 'event', 'EVENT'], # covers events and more
-  'Q33742' : ['natural language','LANGUAGE'],
-  'Q17537576' : ['creative work','WORK_OF_ART'],
-  'Q43229' : ['organization','ORG'],
-  'Q16334295' : ['group of humans','NORP'],
-  'Q7210356' : ['political organisation', 'NORP'],
-  'Q191780' : ['ordinal number', 'ORDINAL'],
-  'Q21199' :  ['CARDINAL', 'natural number', 'Numerals that do not fall under another type'],
-  'Q1368' : ['MONEY', 'Monetary values, including unit'],
-  'Q205892' : ['calendar date', 'DATE'],
-  'Q573' : ['DATE', 'day'],
-  'Q47018901' : ['DATE', 'month'],
-  'Q3186692' : ['DATE', 'year', 'calendar year'],
-  'Q1248784' : ['airport', 'AIRPORT'],
-  'Q4438121' : ['sports organization', 'sports team', 'athletic team'],
-  'Q515' :['city'],
-  'Q7930989' : ['city'],
-  'Q15284' : ['municipality', 'city', 'town', 'village'],
-  'Q486972' : ['populated place', 'settlement', 'community'],
-  'Q6256' : ['country'],
-  'Q42889' : ['vehicle', 'VEH'],
-  'Q18643213' : ['military_equipment', 'MIL'],
-  'Q728' : ['weapon', 'WEA'],
-  'Q4438121' : ['sports organization', 'sports team'],
-  'Q216353' : ['title'],
-  'Q4164871' : ['position'],
-  'Q12737077' : ['occupation', 'profession'],
-  'Q223557' : ['physical object', 'physob'],
-  'Q61606710' : ['material resource'],  # may be better for physobs
-  'Q7184903' : ['abstract object', 'ABSTRACT'],
-  'Q3966' : ['computer hardware'],
-  'Q7239' : ['organism', 'living thing'],
-  'Q729' : ['animal'],
-  'Q47461344' : ['written work', 'WRTITTENWORK'],
-  'Q14897293' : ['fictional entity', 'fictional', 'FICTIONAL'],
-  'Q68': ['computer'],
-  'Q4167410' : ['WIKIDISAMBIGUATION'],    #Wikimedia disambiguation page
-  'Q740464' : ['LAW', 'law'],
-  'Q18640' : ['TIME', 'time'],
-  'Q11229' : ['PERCENT', 'percent'],
-  'Q35120' : ['ENTITY', 'entity'],
+ {
   'Q105815710' : ['performing arts group'],
+  'Q10856962' : ['anthroponym', 'NAME'],
+  'Q11229' : ['PERCENT', 'percent'],
+  'Q1190554' : ['occurrence', 'event', 'EVENT'], # covers events and more
+  'Q12143' : ['time zone', 'timeZone'],
+  'Q1248784' : ['airport', 'AIRPORT'],
+  'Q12737077' : ['occupation', 'profession'],
+  'Q13226383' : ['facility','FAC'],
+  'Q1368' : ['MONEY', 'Monetary values, including unit'],
+  'Q14897293' : ['fictional entity', 'fictional', 'FICTIONAL'],
+  'Q15284' : ['municipality', 'city', 'town', 'village'],
+  'Q16334295' : ['group of humans'],
+  'Q1656682' : ['event', 'EVENT'],
+  'Q17379835' : ['Wikimedia page outside the main knowledge tree', 'wikijunk'],
+  'Q17537576' : ['creative work','WORK_OF_ART'],
   'Q1781513': ['positon'], # on a team, e.g. quarterback
+  'Q18640' : ['TIME', 'time'],
+  'Q18643213' : ['military_equipment', 'MIL'],
+  'Q191067' : ['ARTICLE'],
+  'Q191780' : ['ordinal number', 'ORDINAL'],
+  'Q205892' : ['calendar date', 'DATE'],
+  'Q21199' :  ['CARDINAL', 'natural number', 'Numerals that do not fall under another type'],
+  'Q216353' : ['title'],
+  'Q2188189' : ['song', 'SONG'],
+  'Q2221906' : ['geographic location','LOC'],
+  'Q231002' : ['nationality', 'NORP'],
+  'Q223557' : ['physical object', 'physob'],
+  'Q2424752' : ['product', 'PRODUCT'],
+  'Q3186692' : ['DATE', 'year', 'calendar year'],
+  'Q33742' : ['natural language','LANGUAGE'],
+  'Q35120' : ['ENTITY', 'entity'],
+  'Q3966' : ['computer hardware'],
+  'Q41710' : ['ethnic group', 'NORP'],
+  'Q4164871' : ['position'],
+  'Q4167410' : ['WIKIDISAMBIGUATION'],    #Wikimedia disambiguation page
+  'Q42889' : ['vehicle', 'VEH'],
+  'Q43229' : ['organization','ORG'],
   'Q4392985' : ['religious identity','NORP'],
-  'Q17379835' : ['Wikimedia page outside the main knowledge tree', 'wikijunk']
+  'Q4438121' : ['sports organization', 'sports team', 'athletic team'],
+  'Q4438121' : ['sports organization', 'sports team'],
+  'Q47018901' : ['DATE', 'month'],
+  'Q47461344' : ['written work', 'WRTITTENWORK'],
+  'Q486972' : ['populated place', 'settlement', 'community'],
+  'Q5' : ['human','PER', 'PERSON'],
+  'Q515' :['city'],
+  'Q56061' : ['GPE'],
+  'Q573' : ['DATE', 'day'],
+  'Q61606710' : ['material resource'],  # may be better for physobs
+  'Q6256' : ['country'],
+  'Q634' : ['planet', 'LOC'],
+  'Q68': ['computer'],
+  'Q7184903' : ['abstract object', 'ABSTRACT'],
+  'Q7278' : ['political party', 'NORP'],
+  'Q7239' : ['organism', 'living thing'],
+  'Q728' : ['weapon', 'WEA'],
+  'Q729' : ['animal'],
+  'Q732577': ['PUBLICATION'],
+  'Q740464' : ['LAW', 'law'],
+  'Q7406919' :['service', 'ORG', 'ORGANIZATION'],
+  'Q7930989' : ['city'],
+  'Q106043376': ['music release type', 'MUSIC']
  }
 )
 
@@ -126,7 +139,6 @@ schematype2names = defaultdict(list, {
   'VideoGame' : [ ] #PRODUCT 
  }
 )
-
 
 spacytype2wdtypes = {
   'PERSON' : ['Q5'],
@@ -274,51 +286,6 @@ def wd_types(type_names):
                 wd_types.add(t)
     return(list(wd_types))
 
-# --------------------------------------------------------------------------
-# SCALE 2021 type lists (under development)
-# --------------------------------------------------------------------------
-
 
 # these are all of the types that we might want to be aware of for scale2021
 scale_types = wdtype2names.keys()
-
-# the default target type if none is specified
-scale_default_target_types = ['ENTITY']
-
-# These are types that should be ok and useful for scale2021
-scale_default_ok_types =  [
-
-#person or organization (Q106559804)
- 'ENTITY',
- 'AIRPORT',
- 'CARDINAL',
-# 'DATE',
- 'EVENT',
- 'FAC',
- 'GPE',
- 'LANGUAGE',
- 'LAW',
- 'LOC',
- 'MIL',
- 'MONEY',
- 'NORP',
- # 'ORDINAL',
- 'ORG',
- 'PER',
- # 'PERCENT',
- 'PRODUCT',
-# 'QUANTITY',
- # 'TIME',
- 'VEH',
- 'WEA']
-
-# These are types that will probably not be useful for scale2021.  We will need to add more
-scale_default_bad_types = [
-    'wikijunk',
-    'WIKIDISAMBIGUATION',
-    'FICTIONAL',
-#     'WRTITTENWORK',
-#     'WORK_OF_ART',
-#     'performing arts group'
-    ]
-
