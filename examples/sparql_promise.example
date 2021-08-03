@@ -1,0 +1,15 @@
+select distinct * where {
+  
+  # has english name or alias "The Promse"
+  ?x rdfs:label|skos:altLabel "The Promise"@en .
+  
+  # either a file, tv program or painting
+  {?x wdt:P31/wdt:P279* wd:Q11424}
+  UNION
+  {?x wdt:P31/wdt:P279 wd:Q15416}
+
+  
+  #  also get its title and description in english
+  OPTIONAL {?x wdt:P1476 ?title. FILTER (lang(?title) = "en")}
+  OPTIONAL {?x schema:description ?desc. FILTER (lang(?desc) = "en")}
+  } 
