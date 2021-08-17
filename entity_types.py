@@ -33,14 +33,14 @@ wdtype2names = defaultdict(list,
  {
   'Q105815710' : ['performing arts group'],
   'Q10856962' : ['anthroponym', 'NAME'],
-  'Q11229' : ['PERCENT', 'percent'],
-  'Q1190554' : ['occurrence', 'event', 'EVENT'], # covers events and more
+  'Q11229' : ['percent'],
+  'Q1190554' : ['occurrence', 'EVENT'], # covers events and more
   'Q12143' : ['time zone', 'timeZone'],
-  'Q1248784' : ['airport', 'AIRPORT'],
+  'Q1248784' : ['airport'],
   'Q12737077' : ['occupation', 'profession'],
   'Q13226383' : ['facility','FAC'],
   'Q1368' : ['MONEY', 'Monetary values, including unit'],
-  'Q14897293' : ['fictional entity', 'fictional', 'FICTIONAL'],
+  'Q14897293' : ['fictional entity', 'fictional'],
   'Q15284' : ['municipality', 'city', 'town', 'village'],
   'Q16334295' : ['group of humans'],
   'Q1656682' : ['event', 'EVENT'],
@@ -91,14 +91,27 @@ wdtype2names = defaultdict(list,
   'Q740464' : ['LAW', 'law'],
   'Q7406919' :['service', 'ORG', 'ORGANIZATION'],
   'Q7930989' : ['city'],
+  # procure related good types
+  'Q199897' : ['Medical Subject Headings', 'MeSHterm', 'MESH'],
+  'Q18123741' : ['infectious disease'],
+  'Q12136' : ['disease'],
+  'Q15712714' : ['biomolecular structure'],
+  'Q8054' : ['protein'],                      
+  'Q11173' : ['chemical compound'],
+  'Q16521' : ['taxon'],
+  'Q7108' : ['biotechnology'],
+  'Q7187' : ['gene'], 
+  'Q855769' : ['strain'], # as in a strin of virus or bacteria
+  'Q796194' : ['medical procedure'],
+  'Q2826767' : ['disease causative agent'],
+  'Q105259234' : ['immunization safety'],
+  # procure related BAD types
+  # 'Q1792379' : ['art genre'],
+  'Q483394' : ['genre'],  
   'Q106043376': ['music release type', 'MUSIC'],
-     'Q8054' : ['PROTEIN', 'protein'],                      # procure example
-  'Q11173' : ['chemical compound', 'CHEMICAL COMPOUND']     # procure example
-
-
+  'Q4438121' : ['sports organization']
  }
 )
-
 
 
 #TODO: map schema.org types (used by google knowledge graph) to wikidata types)
@@ -130,7 +143,7 @@ schematype2names = defaultdict(list, {
   'Place' : ['LOC'],
   'Product' : ['PRODUCT'],
   'ProductModel' : ['PRODUCT'],
-  "RadioStation": [ ], #ORG
+  'RadioStation': [ ], #ORG
   'RiverBodyOfWater' : ['GPE'],
   'Religion' : ['NORP'],
   'SoftwareApplication' : ['PRODUCT'],
@@ -163,14 +176,12 @@ spacytype2wdtypes = {
   'ORDINAL' : ['Q923933'],
   'CARDINAL' : ['Q11563'],
    'Q7397': ['software']
-  }
-
+}
 
 # cybersecurity-releeant wikidata types from an earlier system --
 # needs to be reworked and integrated?
-
 wd_cyber_target = {
-  'Q7397': 'software',
+  'Q7397': ['software'],
   'Q205663': 'process',
   'Q68': 'computer',
   'Q1301371': 'network',
@@ -246,11 +257,19 @@ wd_cyber_bad = {
 
 name2wdtypes = defaultdict(list)
 
-# populate the name2wdtypes dictionary
+def add_unique(dictionary, name, atype):
+    # add atype to the dictionary for name and name.lower if it's not already in it
+    if atype not in dictionary[name]:
+        dictionary[name].append(atype)
+    name = name.lower()
+    if atype not in dictionary[name]:
+        dictionary[name].append(atype)    
+
+# populate the name2wdtypes dictionary, addng an entry for each name and its lowercase version
 for atype, names in wdtype2names.items():
-    name2wdtypes[atype] = [atype]
+    add_unique(name2wdtypes, atype, atype)
     for name in names:
-        name2wdtypes[name].append(atype)
+        add_unique(name2wdtypes, name, atype)
 
 # dict maping a type name to its corresponding schema.org type.  We also map a type to
 # itself, so it given a string X that might be either a schema.org type or a spacy type
