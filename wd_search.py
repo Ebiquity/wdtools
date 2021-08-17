@@ -16,6 +16,8 @@ import argparse as ap
 import sys
 import json
 import yaml
+import pickle
+import re
 from SPARQLWrapper import SPARQLWrapper, JSON
 import requests
 from collections import defaultdict
@@ -35,9 +37,11 @@ LANGS = config.get("LANGS")
 TARGET_TYPES = config.get("TARGET_TYPES")
 NEAR_MISS_TYPES = config.get("NEAR_MISS_TYPES")
 OK_TYPES = config.get("OK_TYPES")
+GOOD_TYPES = config.get("GOOD_TYPES")
 BAD_TYPES = config.get("BAD_TYPES")
 LIMIT = config.get("LIMIT")
 TOP = config.get("TOP")
+PROMOTE_EXACT_LABEL_MATCH = config.get("PROMOTE_EXACT_LABEL_MATCH")
 DBPEDIA = config.get("DBPEDIA")
 CATEGORY = config.get("CATEGORY")
 CONTEXT = config.get("CONTEXT")
@@ -47,6 +51,16 @@ SCALE = config.get("SCALE")
 SEARCH_ACTION = config.get("SEARCH_ACTION")
 SEARCH_LANGUAGE = config.get("SEARCH_LANGUAGE")
 LANGUAGE_MODEL = config.get("LANGUAGE_MODEL")
+LEMMATIZE_SEARCH_STRING = config.get("LEMMATIZE_SEARCH_STRING")
+DECODE_TO_ASCII = config.get("DECODE_TO_ASCII")
+REMOVE_SPECIAL_CHARS = config.get("REMOVE_SPECIAL_CHARS")
+SPECIAL_CHARS = config.get("SPECIAL_CHARS")
+DOMAIN = config.get("DOMAIN")
+
+# Procure specific things
+if DOMAIN == 'Procure':
+    with open('mesh_items.pkl', 'rb') as infile: 
+        mesh_items = pickle.load(infile)
 
 # If USE_CONTEXT is true that we may pass a context sentences with an
 # entity to help select the best match.  The context can be either a
@@ -98,8 +112,8 @@ default_dbpedia_endpoint = "http://dbpedia.org/sparql"
 USER_AGENT = "SearchBot/2.0 (Tim Finin)"
 
 
-def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, top=TOP, category=CATEGORY, context=None, ranking=RANKING, langs=LANGS, dbpedia=DBPEDIA):
-    links = search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, dbpedia=dbpedia, top=top, category=category, context=context, complete=False)
+def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, good_types=GOOD_TYPES, bad_types=BAD_TYPES, top=TOP, category=CATEGORY, context=None, ranking=RANKING, langs=LANGS, dbpedia=DBPEDIA):
+    links = search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, dbpedia=dbpedia, top=top, category=category, context=context, complete=False)
     #print("LINKS:", links)
     if not links:
         return None
@@ -126,23 +140,23 @@ def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYP
     return complete_item(result, langs, dbpedia)
 
 
-
 # search wikidata given a string for entities, filter by requiring a type on the target or ok list and no types on the bad list
 
-def search(string, langs=LANGS, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, limit=LIMIT, top=TOP, dbpedia=DBPEDIA, category=CATEGORY, context='', complete=True):
+def search(string, langs=LANGS, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, limit=LIMIT, top=TOP, dbpedia=DBPEDIA, category=CATEGORY, context='', complete=True, extended_context='', promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH):
     """ generic WD search """
+
     # track these for performance reviews
     global wd_queries, dbp_queries, candidates_checked
-
     wd_queries = dbp_queries = candiates_checked = 0
-    hits = string_search(string, target_types=target_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top, context=context)
+    
+    hits = string_search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top, context=context, extended_context='', promote_exact_label_match=promote_exact_label_match)
     if complete:
         return [complete_item(hit, langs, dbpedia) for hit in hits]
     else:
         return hits
 
 
-def string_search(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, category=CATEGORY, limit=LIMIT, top=TOP, action=SEARCH_ACTION, lang=SEARCH_LANGUAGE, context=''):
+def string_search(string, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, category=CATEGORY, limit=LIMIT, top=TOP, action=SEARCH_ACTION, promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH, lang=SEARCH_LANGUAGE, context='', extended_context=''):
 
     """ search for up to limit items whose text matches string that
     returns a list ranked by several factors. We want to return the top
@@ -154,6 +168,8 @@ def string_search(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_type
 
     global candidates_checked
 
+    assert category in ['all', 'strictinstance', 'instance', 'strictconcept', 'concept']
+
     #print(f"action:{action}, tagets: {target_types}, ok: {ok_types}, top: {top}, limit: {limit}")
     near_miss_types = []
     for t in target_types:
@@ -161,95 +177,87 @@ def string_search(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_type
 
     # resolve the type names to Qids (e.g., PER=>Q5)
     target_types = wd_types(target_types)
+    good_types = wd_types(good_types)
     ok_types = wd_types(ok_types)
     bad_types = wd_types(bad_types)
     near_miss_types = wd_types(near_miss_types)
 
-    if category not in ['all', 'strictinstance', 'instance', 'strictconcept', 'concept']:
-        #print('wd_search_string:', category)
-        print(f"ERROR: {category} not a recognized category values, should be 'all', 'strictinstance', 'instance', 'strictconcept', or 'concept'")
-        return []
-
-    ##print(f"search for {top} hits out of {limit} with TARGET:{target_types}, OK:{ok_types}, BAD:{bad_types}")
-
+    # every hit should be in one of these
     target_hits = []      # candidates with a type in target_types and no type in bad_types
     near_miss_hits = []   # candidates that might be mistaken as one orf these instead of a target type
-    ok_hits = []          # candidates with a type in ok_types and no type in bad_types
+    good_hits = []        # candidates with a good type for the domains
+    ok_hits = []          # candidates with a possible type for the domain
 
-    api_url = "https://www.wikidata.org/w/api.php"
-    # there are two ways to search for wikidata items
-    if action == "label_aliases_description":
-        params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, 'format':'json', 'srprop':'titlesnippet|snippet'}
-        result = requests.Session().get(url=api_url, params=params).json()
-        candidates = [item for item in result['query']['search']]
-    elif action == "label_aliases":
-        params = {'action':'wbsearchentities', 'search':string, "language":lang, 'format':'json', 'limit':limit}
-        result = requests.Session().get(url=api_url, params=params).json()
-        candidates = [item for item in result['search']]
-    else:
-        print(f"Unknown wikidata search action: {action}")
-        return [ ]
-
+    string = improve_search_string(string)
+    string, candidates = get_candidates(string, action, limit, lang)
+    
     ##print(f"candidates: {len(candidates)}")
     # process each candidate until we've found enough hits
     for item in candidates:
-        candidates_checked += 1
+        candidates_checked += 1 # for debugging
         id = item['title']
-        ##print('checking:', id, item)
-        found_types = get_types(id, target_types, near_miss_types, ok_types, bad_types, category)
-        ##print('found:', found_types)
-        if found_types == ([],[],[]):   # found neither a target, near miss, nor ok type, skip
+        #print('checking:', id, item)
+        found_types = get_types(id, target_types, near_miss_types, good_types, ok_types, bad_types, category)
+        if found_types == ([],[],[],[]):   # found neither a target, near miss, nor ok type, skip
             continue
-        tt, nmt, ot = found_types
-        item['types'] = [t[0] + ':' + t[1] for t in tt + nmt + ot ]
+        #print('TYPES', id, found_types)
+        tt, nmt, gt, ot = found_types
+        
+        item['types'] = [t[0]+':'+t[1] for t in tt + nmt + gt + ot]
+
+        if action == "label_aliases_description":  #regularize
+            item['description'] = item['snippet'].replace('<span class="searchmatch">','').replace('</span>','')
+            item['label'] = item['titlesnippet'].replace('<span class="searchmatch">','').replace('</span>','')
+
         if tt:
             target_hits.append(item)
         elif nmt:
-            near_miss_hits.append(item)            
+            near_miss_hits.append(item)
+        elif gt:
+            good_hits.append(item)
         elif ot:
             ok_hits.append(item)
-        # stop checking candidates if we have enough hits
-        if top and (len(target_hits) >= top):
-            break
 
-    # return target hits and enough ok hits needed to get to top or as close as possible
-    hits = (target_hits + near_miss_hits + ok_hits)
-    if not hits:
-        return []
-    elif len(hits) > top:
-        hits = hits[:top]
+    hits = (target_hits + near_miss_hits + good_hits + ok_hits)
+    #print(f"HITS: {[h['label'] for h in hits]}")
     
-    for rank, hit in enumerate(hits):
+    if not hits:
+        return []    
+
+    # we may want to give preference to hits whose label is an exact match for string
+    # if so, move any exact matches to front of each list
+    if promote_exact_label_match:
+        hits =  promote_matches(hits, string.lower())
+
+    # return target hits and enough near_miss, good and ok hits needed to get to top or as close as possible
+    hits = hits[:top]
+
+    #print(f"TOP: {[h['label'] for h in hits]}")
+
+    # regularize/add hit properties
+    for hit in hits:
         hit['id'] = hit['qid'] = hit['title']
         hit['mention'] = string
-        if action == "label_aliases_description":
-            hit['description'] = hit['snippet'].replace('<span class="searchmatch">','').replace('</span>','')
-            hit['label'] = hit['titlesnippet'].replace('<span class="searchmatch">','').replace('</span>','')
-        elif action == "label_aliases":
-            # has label, title, description
-            pass
-        hit['search_rank'] = rank + 1
-        hit['score'] = 0.0
         pop_keys(hit, ['snippet', 'titlesnippet', 'title', 'pageid', 'url', 'repository', 'ns'])
-        #if 'label' not in hit: hit['label'] = ''
-        #if 'description' not in hit: hit['description'] = ''
+
+    # add rank and context scores 
+    for rank, hit in enumerate(hits):
+        hit['search_rank'] = rank + 1
         # add context scores
+        hit['score'] = 0.0
         if context and USE_CONTEXT:
             if type(context) == str:
                 hit['context'] = context
                 context = nlp(context)
             else:
                 hit['context'] = context.text
-            ##print(f'\nFor "{string}" {target_types} in "{context.text}":')
             if hit['label'] and hit['description']:
                 label = hit['label']
                 desc = hit['description']
                 wd_text = desc if label in desc else label + " " + desc    # add label to description if it's not in it
                 hit['score'] = nlp(wd_text).similarity(context)
-                #print(f"score for {hit['id']} = {hit['score']}")
             else:
                 wd_text = ""
-            #print(f" #{hit['rank']} {hit['score']:.2f} {hit['qid']} {wd_text} ==> {hit['context'][:30]}")                
 
     for n, hit in enumerate(sorted(hits, key=lambda x: x['score'], reverse=True)):
         hit['scores'] = [hit['score']]
@@ -258,6 +266,84 @@ def string_search(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, bad_type
     
     return hits
 
+def promote_matches(hits, string_lower):
+    if not hits:
+        return hits
+    exact_match = []
+    not_exact_match = []
+    for hit in hits:
+        exact_match.append(hit) if hit['label'].lower() == string_lower else not_exact_match.append(hit)
+    if exact_match:  # we found some exact matches
+        #print('PROMOTING:', exact_match)
+        return exact_match + not_exact_match
+    else:
+        return hits
+    
+
+def get_candidates(string, action=SEARCH_ACTION, limit=LIMIT, lang=SEARCH_LANGUAGE):
+    """ return a tuple of the string and a list of limit candidates matching string """
+
+    assert action in ['label_aliases_description', 'label_aliases']
+
+    hits = get_candidates1(string, action, limit, lang)
+    if hits:
+        return (string, hits)
+    #print(f"Search string {string} produced no hits")
+    # try removing first token
+    string = ' '.join(string.split(' ')[1:])
+    if string:
+        hits = get_candidates1(string, action, limit, lang)
+        #print(f"Truncated string {string} produced candidates {item_ids(hits)}")
+        return (string, hits)
+    else:
+        print(f"Truncated string {string} produced no candidates")        
+        return (string, [])
+
+def get_candidates1(string, action, limit, lang):
+    """ return a list of limit candidates matching string """
+    api_url = "https://www.wikidata.org/w/api.php"
+
+    # there are two ways to search for wikidata items, the first may be best
+    if action == "label_aliases_description":
+        params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, 'format':'json', 'srprop':'titlesnippet|snippet'}
+        result = requests.Session().get(url=api_url, params=params).json()
+        hits = [item for item in result['query']['search']]
+    elif action == "label_aliases":
+        params = {'action':'wbsearchentities', 'search':string, "language":lang, 'format':'json', 'limit':limit}
+        result = requests.Session().get(url=api_url, params=params).json()
+        hits = [item for item in result['search']]
+    for h in hits:
+        h['search_string'] = string
+    return hits
+
+def item_ids(hits):
+    return [h['title'] for h in hits]
+
+def improve_search_string(string):
+    """ improve a search staring by mapping to ascii, lemmatizxing and remving any unhelpgul characters """
+    original = string
+    if DECODE_TO_ASCII:
+        if "\\x" in string:
+            string = re.sub(r'\\x..',r'', string)
+        else:
+            #string2 = re.sub(r'[^\x00-\x7f]',r'', string)
+            string = string.encode('utf-8').decode('ascii', errors='ignore')
+    if LEMMATIZE_SEARCH_STRING:
+        string = lemmatize_string(string)
+    if REMOVE_SPECIAL_CHARS:
+        string = remove_special_chars(string)
+    #print(f"mapping {original} ==> {string}")
+    return(string.strip())
+
+def lemmatize_string(string):
+    """ Returns a new string with each of the tokens in the input replaced by their lemma """
+    doc = nlp(string)
+    return ' '.join([t.lemma_ for t in doc[:]])
+
+def remove_special_chars(string):
+    for char in SPECIAL_CHARS:
+        string = string.replace(char, '')
+    return string
 
 def pop_keys(dic, keys):
     """ removes keys from a doctionary if they exist """
@@ -344,7 +430,7 @@ def wikidata_search(string, limit=20):
 
 q_types_labels_query_all = """
 select distinct ?type ?typeLabel {{
-   wd:{QID} wdt:P31/wdt:P279*|wdt:P279* ?type .
+   wd:{QID} wdt:P31/wdt:P279*|wdt:P279+ ?type .
    ?type rdfs:label ?typeLabel .
    FILTER (lang(?typeLabel) = "en") }}"""
 
@@ -374,7 +460,7 @@ select distinct ?type ?typeLabel {{
    ?type rdfs:label ?typeLabel .
    FILTER (lang(?typeLabel) = "en") }}"""
 
-def get_types(qid, target_types, near_miss_types, ok_types, bad_types, category):
+def get_types(qid, target_types, near_miss_types, good_types, ok_types, bad_types, category):
     """
     Given a wikidata id (e.g., Q7803487) returns a tuple with its types in target_types, ok_types.
     returns immediaely with ([],[]) if a type in bad_types. We assume that target_types, preferred_types, acceptable_types,
@@ -385,23 +471,35 @@ def get_types(qid, target_types, near_miss_types, ok_types, bad_types, category)
     ##print('called:', qid, target_types, near_miss_types, ok_types, bad_types, category)
     ttypes =  [ ]
     nmtypes = [ ]
+    gtypes = [ ]
     oktypes = [ ]
 
-    for id_label in query_for_types(qid, category):
+    types = query_for_types(qid, category)
+    inferred = infer_types(qid, category, types)
+    types = types.union(inferred)
+    
+
+    if not types:
+        return ([], [], [], [])
+
+    for id_label in types:
         id = id_label[0]
-        ##print(f"get_type checking {id}")
+        #print(f"get_type checking {id}")
         if id in bad_types:
             #print(f"{qid} bailing on bad type:{id_label}")
-            return ([ ], [ ], [ ])
+            return ([], [], [], [])
         elif id in target_types:
-            ##print(f"{id} in target types")
+            #print(f"{id} in target types")
             ttypes.append(id_label)
         elif id in near_miss_types:
-            ##print(f"{id} in near miss types")
+            #print(f"{id} in near miss types")
             nmtypes.append(id_label)
+        elif id in good_types:
+            #print(f"{id} in near miss types")
+            gtypes.append(id_label)            
         elif id in ok_types:
             oktypes.append(id_label)
-    found = (ttypes, nmtypes, oktypes)
+    found = (ttypes, nmtypes, gtypes, oktypes)
     return found
 
 @lru_cache(maxsize= CACHE_SIZE * 2)
@@ -425,8 +523,16 @@ def query_for_types(qid, category):
     for result in results["results"]["bindings"]:
         id_label = (result['type']['value'].rsplit('/',1)[-1], result['typeLabel']['value'])
         type_ids.add(id_label)
-    # print(f"types {qid}: {type_ids}")
     return type_ids
+
+def infer_types(qid, category, types):
+    """ returnsd a list of additional types inferred via various means """
+    inferred_types = set()
+    if qid in mesh_items:
+        # an item that is has a P486 property linking it to a UMLS Medical Subject Heading controled term
+        types.add(('Q199897', 'MESH'))
+    # Add more hacks here
+    return inferred_types
 
 ## send query to enpoints
 
@@ -631,15 +737,15 @@ def summary(hits):
     elif hits:
         return summary1(hits)
     else:
-        return 'No match'
+        return None
 
 def summary1(hit):
     # slightly different versions of SCALE and general
     if hit:
         if SCALE:
-            return (hit['qid'], hit['labels']['en'], hit['descriptions']['en'])
+            return (hit['qid'], hit['search_string'], hit['labels']['en'], hit['descriptions']['en'])
         else:
-            return (hit['id'], hit['en']['label'], hit['en']['description'])
+            return (hit['id'], hit['search_string'], hit['en']['label'], hit['en']['description'])
 
 def main(args):
     if args.link:
