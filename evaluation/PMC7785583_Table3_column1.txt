@@ -1,0 +1,15 @@
+#title	COVID-19: Coronavirus Vaccine Development Updates				
+#caption	SARS-CoV2 vaccines in clinical phase III trials and early or limited use				
+#meta	column	annotator	no context	header	caption
+header	Vaccine Candidates	Q87719492			
+data	BBIBP-CorV	Q106322660			
+data	BBIBP-CorV	Q97154230			
+data	BBIBP-CorV	Q97154233			
+data	Ad5-nCOV	Q96695265			
+data	Sputnik V	Q98270627			
+data	EpiVacCorona	Q98947046			
+data	Ad26.COV2-S	Q98655215			
+data	AZD 1222	Q95042269			
+data	NVX-COV2373	Q97154235			
+data	mRNA 1273	Q87775025			
+data	BNT162	Q97154240			

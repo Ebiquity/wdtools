@@ -1,0 +1,19 @@
+#title	The performance of routine immunization in selected African countries during the first six months of the COVID-19 pandemic			
+#caption	COVID-19 incidence and transmission status in selected countries as of end June 2020			
+#meta	column	annotator	no context	header	caption
+header	Country	Q6256	Q6256	Q6256	Q6256
+data	Angola	Q916	Q916	Q916	Q916
+data	CAR	Q929	Q35156	Q35156	Q35156
+data	Chad	Q657	Q657	Q657	Q657
+data	DR Congo	Q974	Q974	Q974	Q974
+data	Gabon	Q1000	Q1000	Q1000	Q1000
+data	Guinea	Q1006	Q1006	Q1006	Q1006
+data	Nigeria	Q1033	Q1033	Q1033	Q1033
+data	South Sudan	Q958	Q958	Q958	Q958
+data	Burundi	Q967	Q967	Q967	Q967
+data	Eritrea	Q986	Q986	Q986	Q986
+data	Ghana	Q117	Q117	Q117	Q117
+data	Kenya	Q114	Q114	Q114	Q114
+data	Rwanda	Q1037	Q1037	Q1037	Q1037
+data	Senegal	Q1041	Q1041	Q1041	Q1041
+data	Tanzania	Q924	Q924	Q924	Q924

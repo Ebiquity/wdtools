@@ -47,6 +47,9 @@ GOOD_TYPES:
   -  strain
   - 'disease causative agent'
   - 'immunization safety'
+  -  'clinical trial'
+  - 'vaccine type'
+  - 'type of statistic'
 
 # types a result can have to be included even it it does not have a target type or good type
 OK_TYPES: 
