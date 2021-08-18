@@ -3,6 +3,7 @@
 """
 
 import wd_search as wd
+import argparse as ap
 
 def evaluate_column(infile, outfile=None, show_progress=False):
     """ Read in a tab-seperated table of data from a Procure table with annotator data.
@@ -72,4 +73,13 @@ def evaluate_column(infile, outfile=None, show_progress=False):
         for row in out_rows:
             print('\t'.join(row), file=out)
 
-    return "Done"
+    print(f"Wrote output to {outfile}")
+
+
+if __name__ == '__main__':
+    p = ap.ArgumentParser()
+    p.add_argument('infile', help='TSV file of one colummn with annotator data')
+    p.add_argument('-o', '--outfile', nargs='?', default = None, help='filename for output, a TSV file with link predictions')
+    p.add_argument('-s', '--show', nargs='?', default = False, help='show progress as we go')
+    args = p.parse_args()
+    evaluate_column(args.infile, args.outfile, args.show)
