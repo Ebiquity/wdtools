@@ -1,4 +1,6 @@
-# configuration file for wd_search.py for general use, assumes we are only interested in English
+# configuration file for wd_search.py for general use, assumes we are  only interested in English
+
+YAML_FILE_NAME: 'procure_config.yml'
 
 CACHE_SIZE: 4096
 
@@ -50,6 +52,11 @@ GOOD_TYPES:
   -  'clinical trial'
   - 'vaccine type'
   - 'type of statistic'
+  - 'clinical trial phase'      # properties
+  - 'significant place'
+  - 'ClinicalTrials.gov ID'
+  - 'point in time'
+  - 'Wikidata property related to medicine'
 
 # types a result can have to be included even it it does not have a target type or good type
 OK_TYPES: 
@@ -62,8 +69,6 @@ OK_TYPES:
   -  ORG
   -  PERSON
   -  PRODUCT
-
-
 
 # types a result must *not* have
 BAD_TYPES:

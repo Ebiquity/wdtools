@@ -108,6 +108,13 @@ wdtype2names = defaultdict(list,
   'Q30612' : ['clinical trial'],
   'Q105967696' : ['vaccine type'],
   'Q47103999' : ['type of statistic'],
+   # properties
+  'P6099' : ['clinical trial phase'],
+  'P7153' : ['significant place'],
+  'P3098' : ['ClinicalTrials.gov ID'],
+  'P585' : ['point in time'],
+  'Q19887775' : ['Wikidata property related to medicine'],
+  'Q22988603' : ['Wikidata property related to biology'],
   # procure related BAD types
   # 'Q1792379' : ['art genre'],
   'Q483394' : ['genre'],  

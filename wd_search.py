@@ -28,10 +28,13 @@ from functools import lru_cache
 config_file="wd_search_config.yml"
 
 with open(config_file, "r") as f:
-    print("Loading config file", config_file)
+    #print("Loading config file", config_file)
     config = yaml.load(f, Loader=yaml.FullLoader)
 
-# set global variables 
+# set global variables
+YAML_FILE_NAME = config.get("YAML_FILE_NAME")
+print("Loading config file", YAML_FILE_NAME)
+
 CACHE_SIZE = config.get("CACHE_SIZE")
 LANGS = config.get("LANGS")
 TARGET_TYPES = config.get("TARGET_TYPES")
@@ -112,8 +115,8 @@ default_dbpedia_endpoint = "http://dbpedia.org/sparql"
 USER_AGENT = "SearchBot/2.0 (Tim Finin)"
 
 
-def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, good_types=GOOD_TYPES, bad_types=BAD_TYPES, top=TOP, category=CATEGORY, context=None, ranking=RANKING, langs=LANGS, dbpedia=DBPEDIA):
-    links = search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, dbpedia=dbpedia, top=top, category=category, context=context, complete=False)
+def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, good_types=GOOD_TYPES, bad_types=BAD_TYPES, top=TOP, category=CATEGORY, context=None, ranking=RANKING, langs=LANGS, dbpedia=DBPEDIA, namespace="*"):
+    links = search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, dbpedia=dbpedia, top=top, category=category, context=context, complete=False, namespace=namespace)
     #print("LINKS:", links)
     if not links:
         return None
@@ -142,21 +145,21 @@ def link(string, target_types=TARGET_TYPES, ok_types=OK_TYPES, good_types=GOOD_T
 
 # search wikidata given a string for entities, filter by requiring a type on the target or ok list and no types on the bad list
 
-def search(string, langs=LANGS, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, limit=LIMIT, top=TOP, dbpedia=DBPEDIA, category=CATEGORY, context='', complete=True, extended_context='', promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH):
+def search(string, langs=LANGS, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, limit=LIMIT, top=TOP, dbpedia=DBPEDIA, category=CATEGORY, context='', complete=True, extended_context='', promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH, namespace='*'):
     """ generic WD search """
 
     # track these for performance reviews
     global wd_queries, dbp_queries, candidates_checked
     wd_queries = dbp_queries = candiates_checked = 0
     
-    hits = string_search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top, context=context, extended_context='', promote_exact_label_match=promote_exact_label_match)
+    hits = string_search(string, target_types=target_types, good_types=good_types, ok_types=ok_types, bad_types=bad_types, category=category, limit=limit, top=top, context=context, extended_context='', promote_exact_label_match=promote_exact_label_match, namespace=namespace)
     if complete:
         return [complete_item(hit, langs, dbpedia) for hit in hits]
     else:
         return hits
 
 
-def string_search(string, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, category=CATEGORY, limit=LIMIT, top=TOP, action=SEARCH_ACTION, promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH, lang=SEARCH_LANGUAGE, context='', extended_context=''):
+def string_search(string, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_types=OK_TYPES, bad_types=BAD_TYPES, category=CATEGORY, limit=LIMIT, top=TOP, action=SEARCH_ACTION, promote_exact_label_match=PROMOTE_EXACT_LABEL_MATCH, lang=SEARCH_LANGUAGE, context='', extended_context='', namespace="*"):
 
     """ search for up to limit items whose text matches string that
     returns a list ranked by several factors. We want to return the top
@@ -189,7 +192,7 @@ def string_search(string, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_t
     ok_hits = []          # candidates with a possible type for the domain
 
     string = improve_search_string(string)
-    string, candidates = get_candidates(string, action, limit, lang)
+    string, candidates = get_candidates(string, action, limit, lang, namespace)
     
     ##print(f"candidates: {len(candidates)}")
     # process each candidate until we've found enough hits
@@ -218,8 +221,12 @@ def string_search(string, target_types=TARGET_TYPES, good_types=GOOD_TYPES, ok_t
         elif ot:
             ok_hits.append(item)
 
+    #print(f"T: {[h['title'] for h in target_hits]}")
+    #print(f"N: {[h['title'] for h in near_miss_hits]}")
+    #print(f"G: {[h['title'] for h in good_hits]}")
+    #print(f"O: {[h['title'] for h in ok_hits]}")
+    
     hits = (target_hits + near_miss_hits + good_hits + ok_hits)
-    #print(f"HITS: {[h['label'] for h in hits]}")
     
     if not hits:
         return []    
@@ -280,40 +287,51 @@ def promote_matches(hits, string_lower):
         return hits
     
 
-def get_candidates(string, action=SEARCH_ACTION, limit=LIMIT, lang=SEARCH_LANGUAGE):
+def get_candidates(string, action=SEARCH_ACTION, limit=LIMIT, lang=SEARCH_LANGUAGE, namespace="*"):
     """ return a tuple of the string and a list of limit candidates matching string """
 
     assert action in ['label_aliases_description', 'label_aliases']
 
-    hits = get_candidates1(string, action, limit, lang)
+    hits = get_candidates1(string, action, limit, lang, namespace)
     if hits:
         return (string, hits)
     #print(f"Search string {string} produced no hits")
     # try removing first token
     string = ' '.join(string.split(' ')[1:])
     if string:
-        hits = get_candidates1(string, action, limit, lang)
+        hits = get_candidates1(string, action, limit, lang,   namespace)
         #print(f"Truncated string {string} produced candidates {item_ids(hits)}")
         return (string, hits)
     else:
         print(f"Truncated string {string} produced no candidates")        
         return (string, [])
 
-def get_candidates1(string, action, limit, lang):
+def get_candidates1(string, action, limit, lang, namespace):
     """ return a list of limit candidates matching string """
     api_url = "https://www.wikidata.org/w/api.php"
 
+    nsd = {'Q':'0', 'P':'120', '*':"120|0"}
+    ns = nsd[namespace]
+    
     # there are two ways to search for wikidata items, the first may be best
     if action == "label_aliases_description":
-        params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, 'format':'json', 'srprop':'titlesnippet|snippet'}
+        params = {'action':'query', 'list':'search', 'srsearch':string, 'srlimit':limit, \
+                      'format':'json', 'srprop':'titlesnippet|snippet' , 'srnamespace':ns}
+        #print('PARAMS1', params)
         result = requests.Session().get(url=api_url, params=params).json()
         hits = [item for item in result['query']['search']]
     elif action == "label_aliases":
-        params = {'action':'wbsearchentities', 'search':string, "language":lang, 'format':'json', 'limit':limit}
+        params = {'action':'wbsearchentities', 'search':string, "language":lang, 'format':'json', 'limit':limit, 'srnamespace':ns}
+        #print('PARAMS2', params)
         result = requests.Session().get(url=api_url, params=params).json()
         hits = [item for item in result['search']]
     for h in hits:
         h['search_string'] = string
+    #print('HITS:', [h['title'] for h in hits])
+    for hit in hits:
+        id = hit['title']
+        if id.startswith('Property:'):
+            hit['title'] = id[9:]
     return hits
 
 def item_ids(hits):
@@ -477,7 +495,6 @@ def get_types(qid, target_types, near_miss_types, good_types, ok_types, bad_type
     types = query_for_types(qid, category)
     inferred = infer_types(qid, category, types)
     types = types.union(inferred)
-    
 
     if not types:
         return ([], [], [], [])
@@ -513,7 +530,7 @@ def query_for_types(qid, category):
         query = q_types_labels_query_instance.format(QID=qid)
     elif category == 'strictconcept':
         query = q_types_labels_query_strictconcept.format(QID=qid)
-    elif category == 'concept':
+    elif category in ['concept', 'property']:
         query = q_types_labels_query_concept.format(QID=qid)
     else:
         print('ERROR: bad category value in get_types', category)
@@ -523,6 +540,7 @@ def query_for_types(qid, category):
     for result in results["results"]["bindings"]:
         id_label = (result['type']['value'].rsplit('/',1)[-1], result['typeLabel']['value'])
         type_ids.add(id_label)
+    type_ids.add((qid, 'SELF'))
     return type_ids
 
 def infer_types(qid, category, types):
@@ -553,6 +571,17 @@ def query_endpoint(query, endpoint):
     sparql.setQuery(query)
     return sparql.query().convert()
 
+@lru_cache(maxsize=CACHE_SIZE)
+def get_label(id, lang="en"):
+    """ given a wikidata id (e.g., Q42) return it's label in a given language """
+    query = "select ?L {{wd:{ID} rdfs:label ?L. FILTER (langMatches(lang(?L),'{LANG}'))}} LIMIT 1"
+    query = query.format(ID=id, LANG=lang)
+    result = query_wd(query)
+    if result:
+        rs = result["results"]["bindings"]
+        return rs[0]['L']['value'] if rs else ''
+    return ''
+
 # SPARQL query to get entity's label, description, aliases and wikiname for a language
 q_ladw_query = """
 SELECT DISTINCT ?label ?desc (group_concat(distinct ?alias; separator='|') as ?aliases) ?wname
@@ -565,6 +594,8 @@ WHERE {{
   FILTER (!CONTAINS(?wname, ':')) }}
   }}
 GROUP BY  ?label ?desc ?wname """
+
+    
 
 @lru_cache(maxsize=CACHE_SIZE)
 def get_ladw(id, lang):
